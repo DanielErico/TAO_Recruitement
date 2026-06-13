@@ -1,19 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 
-// Service-role client — bypasses RLS, only used server-side
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 /** Resolve the real user_profiles UUID from the cookie.
  *  The cookie may hold a hardcoded demo UUID that doesn't exist in the DB.
  *  Fall back to looking up by email, then by role. */
 async function resolveUserId(cookieUserId: string, cookieEmail: string, role: string): Promise<string | null> {
+  const supabase = createAdminClient();
+
   // 1. Check if the cookie UUID actually exists in user_profiles
-  const { data: byId } = await supabaseAdmin
+  const { data: byId } = await supabase
     .from("user_profiles")
     .select("id")
     .eq("id", cookieUserId)
@@ -23,7 +21,7 @@ async function resolveUserId(cookieUserId: string, cookieEmail: string, role: st
 
   // 2. Try to find by email
   if (cookieEmail) {
-    const { data: byEmail } = await supabaseAdmin
+    const { data: byEmail } = await supabase
       .from("user_profiles")
       .select("id")
       .eq("email", cookieEmail)
@@ -33,7 +31,7 @@ async function resolveUserId(cookieUserId: string, cookieEmail: string, role: st
   }
 
   // 3. Fall back to any user with the matching role
-  const { data: byRole } = await supabaseAdmin
+  const { data: byRole } = await supabase
     .from("user_profiles")
     .select("id")
     .eq("role", role)
@@ -63,8 +61,9 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
+  const supabase = createAdminClient();
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from("jobs")
     .insert({ ...body, created_by: realUserId })
     .select()

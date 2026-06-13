@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 // PUT /api/jobs/[id] — update a job
 export async function PUT(
@@ -22,8 +19,9 @@ export async function PUT(
 
   const { id } = await params;
   const body = await request.json();
+  const supabase = createAdminClient();
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from("jobs")
     .update(body)
     .eq("id", id)
