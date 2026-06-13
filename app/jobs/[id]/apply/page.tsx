@@ -1,0 +1,245 @@
+"use client";
+
+import { useState, useTransition, use, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, UploadCloud, Loader2, CheckCircle2, LogIn } from "lucide-react";
+
+export default function ApplyPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id: jobId } = use(params);
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [coverLetter, setCoverLetter] = useState("");
+  const [portfolioUrl, setPortfolioUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [isCandidate, setIsCandidate] = useState<boolean | null>(null); // null = loading
+  const [appStatus, setAppStatus] = useState<string>("screening");
+  const [fitScore, setFitScore] = useState<number | null>(null);
+
+  // Check auth status via cookies
+  useEffect(() => {
+    const getCookie = (name: string) => {
+      const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+      return match ? match[2] : null;
+    };
+    const role = getCookie("user_role");
+    setIsCandidate(role === "candidate");
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.append("jobId", jobId);
+      formData.append("coverLetter", coverLetter);
+      formData.append("portfolioUrl", portfolioUrl);
+      if (resumeFile) {
+        formData.append("resume", resumeFile);
+      }
+
+      const res = await fetch("/api/applications", {
+        method: "POST",
+        body: formData,
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(json.error || `Submission failed (${res.status})`);
+        return;
+      }
+
+      // Sync real UUID back to cookie if it was a demo UUID
+      if (json.realUserId) {
+        document.cookie = `mock_user_id=${json.realUserId}; path=/; max-age=604800; SameSite=Lax`;
+      }
+
+      if (json.status) setAppStatus(json.status);
+      if (json.fitScore) setFitScore(json.fitScore);
+      setSuccess(true);
+    });
+  }
+
+  // Success screen
+  if (success) {
+    return (
+      <div className="min-h-screen bg-[var(--color-background)] flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+        <div className="mb-6">
+          <Image src="/logo.webp" alt="TAO" width={72} height={28} priority />
+        </div>
+        <div className="max-w-md w-full bg-white border border-[var(--color-border)] rounded-xl p-8 space-y-6 shadow-sm">
+          <div className="flex justify-center">
+            <CheckCircle2 size={48} className="text-[var(--color-brand)]" strokeWidth={1.5} />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-bold text-[var(--color-foreground)]">Application Submitted!</h1>
+            {fitScore !== null && (
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--color-brand-light)] text-[var(--color-brand)] text-xs font-semibold mx-auto mt-2">
+                CV Match Score: {fitScore}%
+              </div>
+            )}
+            <p className="text-[var(--color-muted-foreground)] text-sm pt-2">
+              {appStatus === "interview" 
+                ? "Excellent! Your resume matches our requirements. You have been pre-selected for the screening interview! You can start it right away."
+                : "Thank you for applying. We have received your application. You will be gotten back to after proper review from the admin via email to proceed for an interview."}
+            </p>
+          </div>
+          <div className="space-y-2.5 pt-2">
+            {appStatus === "interview" && (
+              <Button asChild className="w-full">
+                <Link href="/candidate/interviews">Start AI Interview Now</Link>
+              </Button>
+            )}
+            <Button asChild variant={appStatus === "interview" ? "outline" : "default"} className="w-full">
+              <Link href="/candidate/applications">Go to My Applications</Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Not logged in / loading
+  if (isCandidate === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-[var(--color-brand)]" />
+      </div>
+    );
+  }
+
+  if (!isCandidate) {
+    return (
+      <div className="min-h-screen bg-[var(--color-background)] flex flex-col items-center justify-center p-6 text-center animate-fade-in">
+        <div className="mb-6">
+          <Image src="/logo.webp" alt="TAO" width={72} height={28} priority />
+        </div>
+        <div className="max-w-md w-full bg-white border border-[var(--color-border)] rounded-xl p-8 space-y-6 shadow-sm">
+          <LogIn size={40} className="mx-auto text-[var(--color-brand)]" strokeWidth={1.5} />
+          <div className="space-y-2">
+            <h1 className="text-xl font-bold text-[var(--color-foreground)]">Sign in to Apply</h1>
+            <p className="text-[var(--color-muted-foreground)] text-sm">
+              You need a candidate account to submit an application.
+            </p>
+          </div>
+          <Button asChild className="w-full">
+            <Link href={`/login?next=/jobs/${jobId}/apply`}>Sign In</Link>
+          </Button>
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            Demo: use <strong>candidate@tao.org</strong> with any password
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[var(--color-background)] pb-12">
+      {/* Header */}
+      <header className="border-b border-[var(--color-border)] bg-white sticky top-0 z-30">
+        <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">
+          <Link href="/">
+            <Image src="/logo.webp" alt="TAO" width={72} height={28} priority />
+          </Link>
+        </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-6 py-10 animate-fade-in space-y-8">
+        <div>
+          <Link
+            href={`/jobs/${jobId}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)] transition-colors mb-4"
+          >
+            <ArrowLeft size={16} /> Back to Job Details
+          </Link>
+          <h1 className="text-3xl font-bold text-[var(--color-foreground)] tracking-tight">
+            Submit your application
+          </h1>
+          <p className="text-sm text-[var(--color-muted-foreground)] mt-1">
+            Takes about 3 minutes to complete.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-border)] rounded-xl p-6 md:p-8 space-y-6 shadow-sm">
+
+          {/* Resume upload — visual only for now, stored as placeholder */}
+          <div className="space-y-1.5">
+            <Label>Resume / CV</Label>
+            <div className="border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center hover:bg-[var(--color-muted)] transition-colors cursor-pointer relative">
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx"
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setResumeFile(file);
+                }}
+              />
+              <UploadCloud size={24} className="mx-auto text-[var(--color-muted-foreground)] mb-2" />
+              {resumeFile ? (
+                <p className="text-sm font-medium text-[var(--color-brand)]">{resumeFile.name}</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-[var(--color-foreground)]">Click to upload or drag and drop</p>
+                  <p className="text-xs text-[var(--color-muted-foreground)] mt-1">PDF, DOC, DOCX (Max. 5MB)</p>
+                </>
+              )}
+            </div>
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              Note: Resume storage is optional — your application will be submitted either way.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="portfolio">Portfolio / LinkedIn URL</Label>
+            <Input
+              id="portfolio"
+              type="url"
+              placeholder="https://linkedin.com/in/yourname"
+              value={portfolioUrl}
+              onChange={(e) => setPortfolioUrl(e.target.value)}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="coverLetter">Cover Letter (Optional)</Label>
+            <Textarea
+              id="coverLetter"
+              rows={5}
+              placeholder="Why are you a great fit for this role?"
+              value={coverLetter}
+              onChange={(e) => setCoverLetter(e.target.value)}
+            />
+          </div>
+
+          {error && (
+            <p className="text-sm text-[var(--color-destructive)] bg-red-50 rounded-md px-3 py-2">
+              {error}
+            </p>
+          )}
+
+          <div className="pt-2">
+            <Button type="submit" className="w-full" disabled={isPending}>
+              {isPending && <Loader2 size={16} className="animate-spin mr-2" />}
+              {isPending ? "Submitting..." : "Submit Application"}
+            </Button>
+          </div>
+        </form>
+      </main>
+    </div>
+  );
+}

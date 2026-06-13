@@ -1,0 +1,28 @@
+TAO Recruit AI - Product Requirements Document (PRD)
+AI-Powered Internal Recruitment & Candidate Assessment PlatformVersion 1.0 MVP
+Project Overview
+TAO Recruit AI is an internal recruitment platform designed to automate candidate screening, assessment, ranking, and reporting. The platform will reduce HR workload by leveraging AI to analyze CVs, conduct structured interviews, generate candidate insights, and assist recruiters in making hiring decisions.
+Objectives
+- Reduce CV screening time by 70%- Improve candidate evaluation consistency- Centralize recruitment workflows- Enable data-driven hiring decisions
+User Roles
+1. Administrator2. Recruiter/HR Officer3. Candidate
+Milestone 1: Authentication & User Management
+Features:- Candidate registration and login- Recruiter and Admin login- Password recovery- Role-based permissionsDeliverables:- Secure authentication- User profile management- Access control
+Milestone 2: Job Management
+Features:- Create job openings- Edit and archive jobs- Define requirements and skills- Application deadlinesDeliverables:- Job creation dashboard- Job listing management
+Milestone 3: Candidate Application System
+Features:- Application form- CV upload- Portfolio links- Application trackingDeliverables:- Candidate portal- File storage integration
+Milestone 4: AI CV Analysis Engine
+Features:- CV parsing- Skill extraction- Experience analysis- Candidate-job match scoringDeliverables:- AI-generated summaries- Match score system- Strengths and weaknesses report
+Milestone 5: AI Interview System
+Features:- AI-generated interview questions- Text-based interview workflow (MVP)- Follow-up questions- Interview transcript generationDeliverables:- Interview module- Question generation engine
+Milestone 6: AI Candidate Evaluation
+Features:- Technical assessment score- Communication score- Problem-solving score- Overall recommendationDeliverables:- Automated evaluation reports- Candidate ranking system
+Milestone 7: Recruiter Dashboard
+Features:- Candidate list- AI reports- Status management- Search and filtersDeliverables:- HR dashboard- Candidate review interface
+Milestone 8: Notifications & Workflow Automation
+Features:- Interview invitations- Rejection emails- Shortlisting notificationsDeliverables:- Email automation workflows
+Technical Stack
+Frontend: Next.js, TailwindCSS, shadcn/uiBackend: SupabaseDatabase: PostgreSQLAuthentication: Supabase AuthStorage: Supabase StorageAI: OpenAI API
+Future Enhancements
+- Voice interviews- Video interviews- Advanced analytics- Candidate comparison tools- Multi-company support
