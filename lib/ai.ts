@@ -47,10 +47,12 @@ function httpsPost(
 }
 
 /**
- * Strips markdown code fences from LLM JSON responses.
+ * Strips thinking model output (<think> blocks) and markdown code fences from LLM JSON responses.
  */
 function cleanJsonContent(content: string): string {
   let cleaned = content.trim();
+  // Remove <think>...</think> blocks produced by reasoning models (e.g. nemotron-ultra)
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   // Remove ```json or ``` fences
   cleaned = cleaned.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "");
   // Find the first { and last } to isolate the JSON object
@@ -146,6 +148,7 @@ ${resumeText.substring(0, 6000)}`;
     temperature: 0.1,
     max_tokens: 2048,
     stream: false,
+    extra_body: { chat_template_kwargs: { enable_thinking: false } },
   });
 
   console.log("[AI] Calling NVIDIA API for resume analysis...");
@@ -315,7 +318,7 @@ ${chatHistory.map((h, i) => `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.response}`
 Generate interview question #${questionIndex + 1}:`;
 
   const requestBody = JSON.stringify({
-    model: "meta/llama-3.1-70b-instruct",
+    model: "nvidia/nemotron-3-ultra-550b-a55b",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -323,6 +326,7 @@ Generate interview question #${questionIndex + 1}:`;
     temperature: 0.7,
     max_tokens: 512,
     stream: false,
+    extra_body: { chat_template_kwargs: { enable_thinking: false } },
   });
 
   console.log("[AI] Generating interview question #" + (questionIndex + 1) + " for", candidateName);
