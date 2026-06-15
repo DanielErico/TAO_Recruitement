@@ -51,24 +51,27 @@ export async function GET() {
     }, { status: 500 });
   }
 
-  // Simulate the exact same request structure as analyzeResume()
+  // Simulate the exact same request structure AND token count as analyzeResume()
+  // This will expose timeout issues that the simple 50-token test hides
   const body = JSON.stringify({
-    model: "nvidia/nemotron-3-ultra-550b-a55b",
+    model: "meta/llama-3.1-8b-instruct",
     messages: [
       {
         role: "system",
-        content: "You are a JSON API. Respond ONLY with this exact JSON object, no other text:\n{\"status\": \"ok\", \"model\": \"working\"}",
+        content: "You are a JSON API. Return ONLY a valid JSON object with this exact structure, no other text:\n{\"full_name\": \"John Smith\", \"email\": \"john@example.com\", \"phone\": \"+1-555-0100\", \"location\": \"New York, NY\", \"skills\": [\"JavaScript\", \"React\", \"Node.js\"], \"education\": [{\"institution\": \"MIT\", \"degree\": \"BSc\", \"field\": \"Computer Science\", \"graduation_year\": \"2020\"}], \"certifications\": [], \"work_experience\": [{\"company\": \"Acme Corp\", \"title\": \"Developer\", \"start_date\": \"01/2021\", \"end_date\": \"Present\", \"current\": true, \"description\": \"Built web apps\"}], \"professional_summary\": \"Experienced developer.\", \"strengths\": [\"Strong JS skills\"], \"weaknesses\": [\"Limited DevOps\"], \"recommendations\": \"Good fit.\", \"job_fit_score\": 82}",
       },
       {
         role: "user",
-        content: "Return the JSON.",
+        content: "Return the JSON object now.",
       },
     ],
     temperature: 0.1,
-    max_tokens: 50,
+    max_tokens: 1200,
     stream: false,
     chat_template_kwargs: { enable_thinking: false },
   });
+
+  const startTime = Date.now();
 
   try {
     const { statusCode, body: rawBody } = await httpsPost(
@@ -95,13 +98,18 @@ export async function GET() {
     }
 
     if (statusCode >= 200 && statusCode < 300) {
+      const elapsed = Date.now() - startTime;
       const content = parsed.choices?.[0]?.message?.content ?? "(empty)";
       return NextResponse.json({
         status: "✅ SUCCESS",
         httpStatus: statusCode,
-        modelReply: content,
+        elapsedMs: elapsed,
+        modelReply: content.substring(0, 300),
+        tokenCount: parsed.usage?.completion_tokens ?? "unknown",
+        note: elapsed > 8000
+          ? "⚠️ Response took >8s — WILL TIMEOUT on Vercel free tier (10s limit). Upgrade to Pro or use a faster model."
+          : "Response is fast enough for Vercel free tier.",
         keyPrefix: apiKey.substring(0, 12) + "...",
-        note: "If modelReply contains valid JSON, the full AI analysis should work.",
       });
     } else {
       return NextResponse.json({

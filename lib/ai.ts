@@ -140,7 +140,7 @@ ${jobRequirements}
 ${resumeText.substring(0, 6000)}`;
 
   const requestBody = JSON.stringify({
-    model: "nvidia/nemotron-3-ultra-550b-a55b",
+    model: "meta/llama-3.1-8b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -318,7 +318,7 @@ ${chatHistory.map((h, i) => `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.response}`
 Generate interview question #${questionIndex + 1}:`;
 
   const requestBody = JSON.stringify({
-    model: "nvidia/nemotron-3-ultra-550b-a55b",
+    model: "meta/llama-3.1-8b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
