@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { applicationId, candidateId, answers = [], startTime } = body;
 
-    if (!applicationId || !candidateId || !answers.length) {
-      return NextResponse.json({ error: "Missing applicationId, candidateId or answers" }, { status: 400 });
+    if (!applicationId || !candidateId) {
+      return NextResponse.json({ error: "Missing applicationId or candidateId" }, { status: 400 });
     }
 
     // Security check: candidate can only submit their own interview
@@ -71,11 +71,17 @@ export async function POST(request: NextRequest) {
       .delete()
       .eq("interview_id", interview.id);
 
-    const responsesToInsert = answers.map((ans: any) => ({
-      interview_id: interview.id,
-      question_text: ans.question,
-      response_text: ans.response
-    }));
+    const responsesToInsert = answers.length > 0
+      ? answers.map((ans: any) => ({
+          interview_id: interview.id,
+          question_text: ans.question,
+          response_text: ans.response
+        }))
+      : [{
+          interview_id: interview.id,
+          question_text: "System Information",
+          response_text: "The candidate's interview session timed out before any answers could be successfully recorded."
+        }];
 
     const { error: respError } = await supabase
       .from("interview_responses")

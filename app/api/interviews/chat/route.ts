@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { applicationId, questionIndex, chatHistory = [] } = body;
+    const { applicationId, questionIndex, chatHistory = [], globalTimeLeft } = body;
 
     if (!applicationId || questionIndex === undefined) {
       return NextResponse.json({ error: "Missing applicationId or questionIndex" }, { status: 400 });
@@ -66,7 +66,8 @@ export async function POST(request: NextRequest) {
       cvSummary,
       cvSkills,
       chatHistory,
-      questionIndex
+      questionIndex,
+      globalTimeLeft
     );
 
     return NextResponse.json({

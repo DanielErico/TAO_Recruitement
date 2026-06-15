@@ -36,6 +36,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const [isListening, setIsListening] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(60);
   const [recommendedSeconds, setRecommendedSeconds] = useState<number>(60);
+  const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(300); // 5 minutes in seconds
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -44,12 +45,58 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const isListeningRef = useRef(isListening);
   const modeRef = useRef(mode);
   const isAiTypingRef = useRef(isAiTyping);
+  const answersRef = useRef(answers);
+  const currentInputRef = useRef(currentInput);
 
   useEffect(() => {
     isListeningRef.current = isListening;
     modeRef.current = mode;
     isAiTypingRef.current = isAiTyping;
   }, [isListening, mode, isAiTyping]);
+
+  useEffect(() => {
+    answersRef.current = answers;
+    currentInputRef.current = currentInput;
+  }, [answers, currentInput]);
+
+  // Global Timer countdown hook
+  useEffect(() => {
+    if (mode !== "chat" || globalTimeLeft <= 0) return;
+
+    const interval = setInterval(() => {
+      setGlobalTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          handleGlobalTimeout();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [mode, globalTimeLeft]);
+
+  async function handleGlobalTimeout() {
+    setMode("submitting");
+    const finalSpeech = currentInputRef.current.trim();
+    let finalAnswers = [...answersRef.current];
+    
+    if (finalSpeech) {
+      const aiMessages = messages.filter((m) => m.sender === "ai");
+      const currentQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].text : "Introduction";
+      finalAnswers.push({ question: currentQuestion, response: finalSpeech });
+    }
+    
+    if (finalAnswers.length === 0) {
+      finalAnswers.push({ 
+        question: "Introduction", 
+        response: "(No responses recorded within the 5-minute time limit)" 
+      });
+    }
+
+    submitInterview(finalAnswers);
+  }
 
   // Auto scroll chat
   useEffect(() => {
@@ -200,10 +247,10 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setQuestionIndex(nextIndex);
 
     // Request next question
-    await fetchNextQuestion(nextIndex, newAnswers);
+    await fetchNextQuestion(nextIndex, newAnswers, globalTimeLeft);
   }
 
-  async function fetchNextQuestion(index: number, currentAnswers: typeof answers) {
+  async function fetchNextQuestion(index: number, currentAnswers: typeof answers, currentGlobalTimeLeft: number) {
     setIsAiTyping(true);
     setError(null);
     try {
@@ -214,6 +261,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
           applicationId,
           questionIndex: index,
           chatHistory: currentAnswers,
+          globalTimeLeft: currentGlobalTimeLeft,
         }),
       });
 
@@ -266,6 +314,14 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   }
 
   function generateFallbackInterviewQuestion(index: number) {
+    if (globalTimeLeft < 80) {
+      return {
+        question: "Thank you! Our 5-minute time limit is nearly up, so we'll stop here. Finalizing the interview and submitting your responses...",
+        isComplete: true,
+        recommendedSeconds: 30
+      };
+    }
+
     const defaults: Record<number, string> = {
       0: `Hi candidate, welcome to the screening interview. To start, could you introduce yourself and explain what interests you about this position?`,
       1: `Can you tell me about a challenging technical problem you solved recently and what technologies you used to resolve it?`,
@@ -324,7 +380,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   function handleStart() {
     setStartTime(new Date());
     setMode("chat");
-    fetchNextQuestion(0, []);
+    setGlobalTimeLeft(300); // Reset global timer
+    fetchNextQuestion(0, [], 300);
   }
 
   // ── Render Intro Mode ──
@@ -357,16 +414,16 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             <div className="flex gap-2.5 items-start">
               <Clock size={16} className="text-[var(--color-brand)] mt-0.5" />
               <div>
-                <strong className="block">Dynamic Countdowns</strong>
-                <span className="text-[var(--color-muted-foreground)]">Each question has a custom time limit depending on its complexity.</span>
+                <strong className="block">5-Minute Total Time Limit</strong>
+                <span className="text-[var(--color-muted-foreground)]">The entire interview is limited to exactly 5 minutes total. The countdown will begin as soon as you start.</span>
               </div>
             </div>
 
             <div className="flex gap-2.5 items-start">
               <Info size={16} className="text-[var(--color-brand)] mt-0.5" />
               <div>
-                <strong className="block">Auto-Submission on Timeout</strong>
-                <span className="text-[var(--color-muted-foreground)]">If the timer runs out, whatever you have spoken will be automatically submitted and the AI will move to the next question.</span>
+                <strong className="block">Auto-Submission & Finalization</strong>
+                <span className="text-[var(--color-muted-foreground)]">When the 5-minute limit expires, all your answers gathered so far will be automatically finalized and submitted to the recruiter.</span>
               </div>
             </div>
           </div>
@@ -424,29 +481,32 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     );
   }
 
+  // Format global MM:SS time string
+  const formatGlobalTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
   // Calculate timer color configuration
-  const progressPercent = (timeLeft / recommendedSeconds) * 100;
+  const globalProgressPercent = (globalTimeLeft / 300) * 100;
+  const isGlobalTimeLow = globalTimeLeft <= 60;
   const isTimeLow = timeLeft <= 15;
-  const timerColorClass = timeLeft <= 10 
-    ? "bg-rose-500 text-rose-500" 
-    : timeLeft <= 20 
-    ? "bg-amber-500 text-amber-500" 
-    : "bg-emerald-600 text-emerald-600";
 
   // ── Render Chat Mode ──
   return (
     <Card className="shadow-md flex flex-col h-[600px] relative overflow-hidden">
-      {/* Dynamic Timer Progress Bar */}
+      {/* Dynamic Timer Progress Bar (Global Duration) */}
       <div className="absolute top-0 left-0 w-full h-1 bg-[var(--color-border)] z-50">
         <div 
           className={`h-full transition-all duration-1000 ${
-            timeLeft <= 10 
+            globalTimeLeft <= 60 
               ? "bg-rose-500 animate-pulse" 
-              : timeLeft <= 20 
+              : globalTimeLeft <= 120 
               ? "bg-amber-500" 
               : "bg-emerald-600"
           }`}
-          style={{ width: `${progressPercent}%` }}
+          style={{ width: `${globalProgressPercent}%` }}
         />
       </div>
 
@@ -456,17 +516,28 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
           <h2 className="font-bold text-sm text-[var(--color-foreground)]">{job.title}</h2>
           <p className="text-xs text-[var(--color-muted-foreground)]">AI Voice Technical Screening</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className={`text-xs font-semibold px-2.5 py-1 rounded-md border flex items-center gap-1.5 ${
-            isTimeLow ? "border-rose-200 bg-rose-50" : "border-[var(--color-border)] bg-[var(--color-muted)]"
+        <div className="flex items-center gap-2">
+          {/* Global Timer Badge */}
+          <div className={`text-xs font-semibold px-2 py-1 rounded-md border flex items-center gap-1.5 ${
+            isGlobalTimeLow ? "border-rose-200 bg-rose-50 text-rose-600" : "border-[var(--color-border)] bg-slate-50 text-slate-700"
           }`}>
-            <Clock size={12} className={isTimeLow ? "text-rose-500 animate-pulse" : "text-[var(--color-muted-foreground)]"} />
-            <span className={`font-mono ${isTimeLow ? "text-rose-600 font-bold" : "text-[var(--color-foreground)]"}`}>
-              {timeLeft}s remaining
+            <Clock size={12} className={isGlobalTimeLow ? "text-rose-500 animate-pulse" : "text-slate-500"} />
+            <span className="font-mono">
+              Total: {formatGlobalTime(globalTimeLeft)}
             </span>
           </div>
-          <div className="text-xs font-semibold px-2.5 py-1 rounded bg-[var(--color-brand-light)] text-[var(--color-brand)]">
-            Question #{questionIndex + 1}
+
+          {/* Question Pacing Badge */}
+          <div className={`text-xs font-semibold px-2 py-1 rounded-md border flex items-center gap-1 ${
+            isTimeLow ? "border-rose-100 bg-rose-50/50 text-rose-500" : "border-[var(--color-border)] bg-slate-50/30 text-slate-600"
+          }`}>
+            <span className="font-mono">
+              Q: {timeLeft}s
+            </span>
+          </div>
+
+          <div className="text-xs font-semibold px-2 py-1 rounded bg-[var(--color-brand-light)] text-[var(--color-brand)]">
+            Q#{questionIndex + 1}
           </div>
         </div>
       </CardContent>

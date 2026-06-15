@@ -276,13 +276,14 @@ export async function generateNextInterviewQuestion(
   cvSummary: string,
   cvSkills: string[],
   chatHistory: { question: string; response: string }[],
-  questionIndex: number
+  questionIndex: number,
+  globalTimeLeft?: number
 ): Promise<{ question: string; isComplete: boolean; recommendedSeconds: number }> {
   const apiKey = process.env.NVIDIA_API_KEY;
 
   if (!apiKey) {
     console.warn("[AI] NVIDIA_API_KEY not set. Using fallback interview question.");
-    return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex);
+    return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex, globalTimeLeft);
   }
 
   const systemPrompt = `You are a professional, empathetic, and sharp AI technical interviewer for TAO Recruit AI.
@@ -303,7 +304,8 @@ Rules:
 3. Set "recommendedSeconds" to an appropriate value between 30 and 120 depending on the question complexity (e.g., 45s for simple intro, 60-90s for standard technical, 90-120s for complex scenario questions).
 4. Keep questions concise and professional (2-3 sentences max).
 5. TONE: Friendly, conversational, and encouraging — like a human technical recruiter.
-6. Reference specific details from the candidate's CV or previous answers to make it feel personal.`;
+6. Reference specific details from the candidate's CV or previous answers to make it feel personal.
+7. TIME LIMIT: The remaining interview time is ${globalTimeLeft !== undefined ? globalTimeLeft : 300} seconds. If the remaining time is less than 80 seconds, you MUST conclude the interview immediately. Set "isComplete" to true and write a warm concluding thank you message. Do NOT ask any more questions.`;
 
   const userContent = `--- JOB SPECIFICATIONS ---
 Role: ${jobTitle}
@@ -361,7 +363,7 @@ Generate interview question #${questionIndex + 1}:`;
     };
   } catch (err: any) {
     console.error("[AI] NVIDIA Interview Question generation failed:", err.message);
-    return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex);
+    return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex, globalTimeLeft);
   }
 }
 
@@ -372,9 +374,19 @@ function generateFallbackInterviewQuestion(
   jobTitle: string,
   candidateName: string,
   chatHistory: { question: string; response: string }[],
-  questionIndex: number
+  questionIndex: number,
+  globalTimeLeft?: number
 ): { question: string; isComplete: boolean; recommendedSeconds: number } {
   const firstName = candidateName.split(" ")[0];
+
+  if (globalTimeLeft !== undefined && globalTimeLeft < 80) {
+    return {
+      question: `Thank you so much, ${firstName}! Our 5-minute time limit is nearly up, so we'll stop here. We will finalize your responses and submit them to the recruiter. Best of luck!`,
+      isComplete: true,
+      recommendedSeconds: 30,
+    };
+  }
+
   const defaults: Record<number, string> = {
     0: `Hi ${firstName}, welcome to the screening interview for the ${jobTitle} role at TAO Recruit. To start, could you briefly introduce yourself and tell me what drew you to applying for this position?`,
     1: `Thank you! Can you walk me through a challenging project or problem you've tackled recently — what was your role, what did you do, and what was the outcome?`,
