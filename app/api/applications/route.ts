@@ -13,6 +13,7 @@ if (typeof global !== "undefined") {
 const pdfParse = require("pdf-parse");
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60; // Allow up to 60s for AI resume analysis (requires Vercel Pro)
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();

@@ -146,7 +146,7 @@ ${resumeText.substring(0, 6000)}`;
       { role: "user", content: userContent },
     ],
     temperature: 0.1,
-    max_tokens: 2048,
+    max_tokens: 1200,
     stream: false,
     chat_template_kwargs: { enable_thinking: false },
   });
