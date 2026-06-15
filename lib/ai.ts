@@ -148,7 +148,7 @@ ${resumeText.substring(0, 6000)}`;
     temperature: 0.1,
     max_tokens: 2048,
     stream: false,
-    extra_body: { chat_template_kwargs: { enable_thinking: false } },
+    chat_template_kwargs: { enable_thinking: false },
   });
 
   console.log("[AI] Calling NVIDIA API for resume analysis...");
@@ -326,7 +326,7 @@ Generate interview question #${questionIndex + 1}:`;
     temperature: 0.7,
     max_tokens: 512,
     stream: false,
-    extra_body: { chat_template_kwargs: { enable_thinking: false } },
+    chat_template_kwargs: { enable_thinking: false },
   });
 
   console.log("[AI] Generating interview question #" + (questionIndex + 1) + " for", candidateName);
