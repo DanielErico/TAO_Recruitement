@@ -158,9 +158,6 @@ export async function POST(request: NextRequest) {
     }
 
     // 5. Run AI CV Analysis
-    const nvidiaKey = process.env.NVIDIA_API_KEY;
-    console.log("[applications] NVIDIA_API_KEY present:", !!nvidiaKey, "| prefix:", nvidiaKey ? nvidiaKey.substring(0, 12) + "..." : "MISSING");
-    console.log("[applications] resumeText length:", resumeText.length, "| first 100 chars:", resumeText.substring(0, 100));
     const analysis = await analyzeResume(resumeText, job.title, job.description, job.requirements);
     const fitScore = analysis.job_fit_score ?? 70;
 
@@ -220,12 +217,6 @@ export async function POST(request: NextRequest) {
       realUserId: candidateId,
       status: applicationStatus,
       fitScore,
-      _debug: {
-        nvidiaKeyPresent: !!process.env.NVIDIA_API_KEY,
-        nvidiaKeyPrefix: process.env.NVIDIA_API_KEY ? process.env.NVIDIA_API_KEY.substring(0, 12) + "..." : "MISSING",
-        resumeLength: resumeText.length,
-        resumePreview: resumeText.substring(0, 80),
-      },
     });
   } catch (err: any) {
     console.error("Application submission failed:", err);
