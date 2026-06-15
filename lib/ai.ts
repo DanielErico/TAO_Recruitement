@@ -138,7 +138,7 @@ ${jobRequirements}
 ${resumeText.substring(0, 6000)}`;
 
   const requestBody = JSON.stringify({
-    model: "meta/llama-3.1-70b-instruct",
+    model: "nvidia/nemotron-3-ultra-550b-a55b",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
