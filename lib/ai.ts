@@ -184,7 +184,7 @@ ${resumeText.substring(0, 6000)}`;
   } catch (err: any) {
     console.error("[AI] NVIDIA Resume Analysis failed:", err.message);
     console.warn("[AI] Falling back to heuristic analysis.");
-    return generateFallbackAnalysis(resumeText, jobTitle, jobDescription);
+    return generateFallbackAnalysis(resumeText, jobTitle, jobDescription, err);
   }
 }
 
@@ -194,7 +194,8 @@ ${resumeText.substring(0, 6000)}`;
 function generateFallbackAnalysis(
   resumeText: string,
   jobTitle: string,
-  jobDescription: string
+  jobDescription: string,
+  err?: any
 ): Partial<CVAnalysis> {
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
@@ -260,7 +261,7 @@ function generateFallbackAnalysis(
     weaknesses: ["Full AI analysis not available — manual review recommended."],
     recommendations: "Manual review by recruiter recommended as AI analysis is currently offline.",
     job_fit_score: jobFitScore,
-    raw_json: {},
+    raw_json: err ? { error: err.message, stack: err.stack } : {},
   };
 }
 
