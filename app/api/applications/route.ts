@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { analyzeResume } from "@/lib/ai";
+import { createRequire } from "module";
+import { pathToFileURL } from "url";
 // Mock global browser classes to prevent pdf-parse from crashing during Next.js build module evaluation
 if (typeof global !== "undefined") {
   if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class {};
@@ -101,6 +103,7 @@ export async function POST(request: NextRequest) {
     let resumeUrl = null;
     let storagePath = null;
     let resumeText = "";
+    let pdfExtractError: any = null;
 
     // 3. Upload CV to Storage
     if (resumeFile && resumeFile.size > 0) {
@@ -149,6 +152,11 @@ export async function POST(request: NextRequest) {
           }
           // Dynamically import pdfjs-dist legacy build (pure JS, no native canvas required)
           const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+          const require = createRequire(import.meta.url);
+          pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
+            require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")
+          ).toString();
+
           const loadingTask = pdfjs.getDocument({
             data: new Uint8Array(buffer),
             useSystemFonts: true,
@@ -168,8 +176,13 @@ export async function POST(request: NextRequest) {
         } else {
           resumeText = `Uploaded resume: ${resumeFile.name}. Extraction is simulated for non-PDF files.`;
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error("Failed to parse resume text:", err);
+        pdfExtractError = {
+          message: err.message,
+          stack: err.stack,
+          name: err.name
+        };
         resumeText = `Fallback resume text for candidate. Resume file: ${resumeFile.name}`;
       }
     }
@@ -225,7 +238,10 @@ export async function POST(request: NextRequest) {
         weaknesses: analysis.weaknesses || [],
         recommendations: analysis.recommendations || "",
         job_fit_score: fitScore,
-        raw_json: analysis,
+        raw_json: {
+          ...analysis,
+          ...(pdfExtractError ? { pdf_extract_error: pdfExtractError } : {}),
+        },
       });
 
     if (analysisError) {
