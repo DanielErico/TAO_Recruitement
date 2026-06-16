@@ -177,7 +177,12 @@ ${resumeText.substring(0, 6000)}`;
     console.log("[AI] Raw LLM content (first 300 chars):", content.substring(0, 300));
 
     const cleanContent = cleanJsonContent(content);
-    const parsed = JSON.parse(cleanContent);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleanContent);
+    } catch (parseErr: any) {
+      throw new Error(`JSON parsing failed. Raw content: ${content.substring(0, 1000)}. Error: ${parseErr.message}`);
+    }
 
     console.log("[AI] Analysis complete. Score:", parsed.job_fit_score, "| Name:", parsed.full_name);
     return parsed;
@@ -507,7 +512,12 @@ Analyze the candidate's qualifications and interview performance to compute scor
     }
 
     const cleanContent = cleanJsonContent(content);
-    const parsed = JSON.parse(cleanContent);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleanContent);
+    } catch (parseErr: any) {
+      throw new Error(`JSON parsing failed. Raw content: ${content.substring(0, 1000)}. Error: ${parseErr.message}`);
+    }
 
     return {
       technical_score: Math.min(100, Math.max(0, Number(parsed.technical_score) || 75)),
