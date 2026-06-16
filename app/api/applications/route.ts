@@ -9,8 +9,8 @@ if (typeof global !== "undefined") {
   if (!(global as any).Path2D) (global as any).Path2D = class {};
 }
 
-// @ts-ignore
-const { PDFParse } = require("pdf-parse");
+
+
 
 
 export const dynamic = "force-dynamic";
@@ -141,9 +141,28 @@ export async function POST(request: NextRequest) {
       // 4. Extract PDF or plain text
       try {
         if (resumeFile.type === "application/pdf") {
-          const parser = new PDFParse({ data: buffer });
-          const data = await parser.getText();
-          resumeText = data.text || "";
+          // Mock global browser classes to prevent pdfjs-dist from crashing in Node.js
+          if (typeof global !== "undefined") {
+            if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class {};
+            if (!(global as any).ImageData) (global as any).ImageData = class {};
+            if (!(global as any).Path2D) (global as any).Path2D = class {};
+          }
+          // Dynamically import pdfjs-dist legacy build (pure JS, no native canvas required)
+          const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+          const loadingTask = pdfjs.getDocument({
+            data: new Uint8Array(buffer),
+            useSystemFonts: true,
+            disableFontFace: true,
+          });
+          const doc = await loadingTask.promise;
+          let fullText = "";
+          for (let i = 1; i <= doc.numPages; i++) {
+            const page = await doc.getPage(i);
+            const content = await page.getTextContent();
+            const pageText = content.items.map((item: any) => item.str).join(" ");
+            fullText += pageText + "\n";
+          }
+          resumeText = fullText;
         } else if (resumeFile.type === "text/plain" || resumeFile.type === "text/markdown") {
           resumeText = buffer.toString("utf-8");
         } else {
