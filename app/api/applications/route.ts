@@ -10,7 +10,8 @@ if (typeof global !== "undefined") {
 }
 
 // @ts-ignore
-const pdfParse = require("pdf-parse");
+const { PDFParse } = require("pdf-parse");
+
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Allow up to 60s for AI resume analysis (requires Vercel Pro)
@@ -140,7 +141,8 @@ export async function POST(request: NextRequest) {
       // 4. Extract PDF or plain text
       try {
         if (resumeFile.type === "application/pdf") {
-          const data = await pdfParse(buffer);
+          const parser = new PDFParse({ data: buffer });
+          const data = await parser.getText();
           resumeText = data.text || "";
         } else if (resumeFile.type === "text/plain" || resumeFile.type === "text/markdown") {
           resumeText = buffer.toString("utf-8");
