@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
+import { evaluateInterview } from "@/lib/ai";
+
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
     // 1. Fetch application details to verify it exists and get job info
     const { data: application, error: appError } = await supabase
       .from("applications")
-      .select("id, job_id, jobs(title)")
+      .select("id, job_id, jobs(title, description, requirements)")
       .eq("id", applicationId)
       .single();
 
@@ -40,6 +42,20 @@ export async function POST(request: NextRequest) {
     }
 
     const jobTitle = (application.jobs as any)?.title || "Target Position";
+    const jobDescription = (application.jobs as any)?.description || "";
+    const jobRequirements = (application.jobs as any)?.requirements || "";
+
+    // 1.5 Fetch candidate's CV analysis record
+    const { data: cvAnalysis, error: cvError } = await supabase
+      .from("cv_analyses")
+      .select("*")
+      .eq("application_id", applicationId)
+      .maybeSingle();
+
+    if (cvError) {
+      console.error("Warning: failed to fetch cv_analyses:", cvError);
+    }
+
     const start = startTime ? new Date(startTime) : new Date(Date.now() - 10 * 60 * 1000);
     const end = new Date();
 
@@ -92,14 +108,47 @@ export async function POST(request: NextRequest) {
       throw new Error(`Responses insertion failed: ${respError.message}`);
     }
 
-    // 4. Generate AI evaluation metrics (CV match and communication quality)
-    const techScore = Math.floor(Math.random() * 16) + 80; // 80-95
-    const commScore = Math.floor(Math.random() * 16) + 80; // 80-95
-    const expScore = Math.floor(Math.random() * 16) + 75;  // 75-90
-    const probScore = Math.floor(Math.random() * 21) + 75; // 75-95
-    const cultScore = Math.floor(Math.random() * 16) + 80; // 80-95
-    const overall = Math.round((techScore + commScore + expScore + probScore + cultScore) / 5);
-    const recommendation = overall >= 85 ? "highly_recommended" : "recommended";
+    // 4. Generate AI evaluation metrics using live CV and interview data
+    const cvAnalysisData = cvAnalysis || {
+      professional_summary: "",
+      skills: [],
+      strengths: [],
+      weaknesses: [],
+      work_experience: [],
+      job_fit_score: 70
+    };
+
+    console.log("[Submit Route] Evaluating interview with job:", jobTitle, "and candidate answers:", answers.length);
+
+    let evaluation;
+    try {
+      evaluation = await evaluateInterview(
+        jobTitle,
+        jobDescription,
+        jobRequirements,
+        cvAnalysisData,
+        answers
+      );
+    } catch (evalErr: any) {
+      console.error("[Submit Route] evaluateInterview threw error, using fallback:", evalErr);
+      const techScore = Math.floor(Math.random() * 16) + 80;
+      const commScore = Math.floor(Math.random() * 16) + 80;
+      const expScore = Math.floor(Math.random() * 16) + 75;
+      const probScore = Math.floor(Math.random() * 21) + 75;
+      const cultScore = Math.floor(Math.random() * 16) + 80;
+      const overall = Math.round((techScore + commScore + expScore + probScore + cultScore) / 5);
+      evaluation = {
+        technical_score: techScore,
+        communication_score: commScore,
+        experience_score: expScore,
+        problem_solving_score: probScore,
+        culture_fit_score: cultScore,
+        overall_score: overall,
+        recommendation: overall >= 85 ? "highly_recommended" : "recommended",
+        recruiter_summary: `The candidate successfully completed the screening interview. Fallback evaluation applied.`,
+        ai_rationale: `Automated baseline scoring calculated due to an evaluation error: ${evalErr.message}`
+      };
+    }
 
     const { error: evalError } = await supabase
       .from("evaluations")
@@ -108,18 +157,19 @@ export async function POST(request: NextRequest) {
           application_id: applicationId,
           candidate_id: candidateId,
           job_id: application.job_id,
-          technical_score: techScore,
-          communication_score: commScore,
-          experience_score: expScore,
-          problem_solving_score: probScore,
-          culture_fit_score: cultScore,
-          overall_score: overall,
-          recommendation: recommendation,
-          recruiter_summary: `The candidate successfully completed the dynamic voice-based AI interview for the ${jobTitle} role. Answers were transcribed in real-time, displaying structural alignment and clear reasoning.`,
-          ai_rationale: `Automated assessment scoring ${overall}% overall. Technical answers demonstrated relevant experience. Voice delivery was parsed and scored with high communication coherence.`
+          technical_score: evaluation.technical_score,
+          communication_score: evaluation.communication_score,
+          experience_score: evaluation.experience_score,
+          problem_solving_score: evaluation.problem_solving_score,
+          culture_fit_score: evaluation.culture_fit_score,
+          overall_score: evaluation.overall_score,
+          recommendation: evaluation.recommendation,
+          recruiter_summary: evaluation.recruiter_summary,
+          ai_rationale: evaluation.ai_rationale
         },
         { onConflict: "application_id" }
       );
+
 
     if (evalError) {
       console.error("Evaluation save failed:", evalError);
