@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { analyzeResume } from "@/lib/ai";
-import { createRequire } from "module";
-import { pathToFileURL } from "url";
 // Mock global browser classes to prevent pdf-parse from crashing during Next.js build module evaluation
 if (typeof global !== "undefined") {
   if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class {};
@@ -152,10 +150,15 @@ export async function POST(request: NextRequest) {
           }
           // Dynamically import pdfjs-dist legacy build (pure JS, no native canvas required)
           const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-          const require = createRequire(import.meta.url);
-          pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(
-            require.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs")
-          ).toString();
+          // Use import.meta.resolve() to get the worker URL — require.resolve() is
+          // inlined as a numeric chunk ID by Turbopack/Webpack and breaks at runtime.
+          // import.meta.resolve() returns a proper file:// URL string in Node.js ESM.
+          try {
+            const workerUrl = await import.meta.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
+            pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+          } catch {
+            // Fallback: if resolve fails, let pdfjs use its own default (./pdf.worker.mjs)
+          }
 
           const loadingTask = pdfjs.getDocument({
             data: new Uint8Array(buffer),
