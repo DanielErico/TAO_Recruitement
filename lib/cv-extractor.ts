@@ -82,9 +82,11 @@ export async function extractCVText(
 // This is the only reliable approach for Vercel serverless functions.
 async function extractPDF(buffer: Buffer, fileName: string): Promise<CVExtractionResult> {
   try {
-    // Dynamic import avoids Next.js build-time side effects.
-    // pdf-parse v1.1.1 exports a single default async function.
-    const pdfParse = (await import("pdf-parse")).default;
+    // IMPORTANT: Import from 'pdf-parse/lib/pdf-parse' NOT 'pdf-parse'.
+    // pdf-parse@1.1.1's index.js runs debug test code that tries to open
+    // './test/data/05-versions-space.pdf' — a path that doesn't exist on Vercel.
+    // Importing the core implementation directly bypasses this broken entry point.
+    const pdfParse = (await import("pdf-parse/lib/pdf-parse")).default;
 
     const data = await pdfParse(buffer, {
       // max: 0 means extract ALL pages (no page limit)
