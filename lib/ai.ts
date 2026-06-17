@@ -194,7 +194,7 @@ ${cvTextTruncated}
 Analyze the CV above. Return ONLY valid JSON.`;
 
   const requestBody = JSON.stringify({
-    model: "nvidia/llama-3.1-nemotron-70b-instruct",
+    model: "meta/llama-3.3-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -333,7 +333,7 @@ ${chatHistory.map((h, i) => `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.response}`
 Generate interview question #${questionIndex + 1}:`;
 
   const requestBody = JSON.stringify({
-    model: "nvidia/llama-3.1-nemotron-70b-instruct",
+    model: "meta/llama-3.3-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -486,7 +486,7 @@ ${interviewResponses.map((r, i) => `Q${i + 1}: ${r.question}\nA${i + 1}: ${r.res
 Analyze the candidate's qualifications and interview performance to compute scores and summaries:`;
 
   const requestBody = JSON.stringify({
-    model: "nvidia/llama-3.1-nemotron-70b-instruct",
+    model: "meta/llama-3.3-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },

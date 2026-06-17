@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
         certifications: aiAnalysis?.certifications ?? [],
         recommended_role_fit: aiAnalysis?.recommended_role_fit ?? "",
         overall_score: aiAnalysis?.overall_score ?? 0,
-        ai_model: "nvidia/llama-3.1-nemotron-70b-instruct",
+        ai_model: "meta/llama-3.3-70b-instruct",
         analyzed_at: aiAnalysis ? new Date().toISOString() : null,
       });
 
