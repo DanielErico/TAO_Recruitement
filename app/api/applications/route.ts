@@ -164,6 +164,32 @@ export async function POST(request: NextRequest) {
         file_type: resumeFile.type,
         storage_path: storagePath,
       });
+    } else {
+      // Fallback: check if the candidate has a default resume on their profile
+      const { data: profile } = await supabase
+        .from("candidate_profiles")
+        .select("resume_url, resume_name")
+        .eq("user_id", candidateId)
+        .maybeSingle();
+
+      if (profile?.resume_url) {
+        resumeUrl = profile.resume_url;
+        cvFileName = profile.resume_name || "resume.pdf";
+        try {
+          const fileResponse = await fetch(profile.resume_url);
+          if (fileResponse.ok) {
+            const contentType = fileResponse.headers.get("content-type") || "application/pdf";
+            cvMimeType = contentType.split(";")[0].trim();
+            const arrayBuffer = await fileResponse.arrayBuffer();
+            cvBuffer = Buffer.from(arrayBuffer);
+            console.log(`[Applications] Loaded default CV from profile: ${cvFileName} (${cvBuffer.length} bytes)`);
+          } else {
+            console.warn(`[Applications] Default CV URL inaccessible: HTTP ${fileResponse.status}`);
+          }
+        } catch (err: any) {
+          console.error("[Applications] Failed to download default profile CV:", err.message);
+        }
+      }
     }
 
     // ── 4. Extract CV text ──────────────────────────────────────

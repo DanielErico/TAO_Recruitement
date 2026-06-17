@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, UploadCloud, Loader2, CheckCircle2, LogIn } from "lucide-react";
+import { ArrowLeft, UploadCloud, Loader2, CheckCircle2, LogIn, FileText, X } from "lucide-react";
 
 export default function ApplyPage({
   params,
@@ -28,14 +28,33 @@ export default function ApplyPage({
   const [appStatus, setAppStatus] = useState<string>("screening");
   const [fitScore, setFitScore] = useState<number | null>(null);
 
-  // Check auth status via cookies
+  const [profileResumeName, setProfileResumeName] = useState<string | null>(null);
+  const [profileResumeUrl, setProfileResumeUrl] = useState<string | null>(null);
+
+  // Check auth status and fetch profile details
   useEffect(() => {
     const getCookie = (name: string) => {
       const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
       return match ? match[2] : null;
     };
     const role = getCookie("user_role");
-    setIsCandidate(role === "candidate");
+    const isCandidateUser = role === "candidate";
+    setIsCandidate(isCandidateUser);
+
+    if (isCandidateUser) {
+      fetch("/api/candidate/profile")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.profile) {
+            setProfileResumeName(data.profile.resume_name || null);
+            setProfileResumeUrl(data.profile.resume_url || null);
+            if (data.profile.portfolio_url) {
+              setPortfolioUrl(data.profile.portfolio_url);
+            }
+          }
+        })
+        .catch((err) => console.error("Error loading candidate profile:", err));
+    }
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -176,31 +195,78 @@ export default function ApplyPage({
 
         <form onSubmit={handleSubmit} className="bg-white border border-[var(--color-border)] rounded-xl p-6 md:p-8 space-y-6 shadow-sm">
 
-          {/* Resume upload — visual only for now, stored as placeholder */}
+          {/* Resume upload */}
           <div className="space-y-1.5">
             <Label>Resume / CV</Label>
-            <div className="border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center hover:bg-[var(--color-muted)] transition-colors cursor-pointer relative">
-              <input
-                type="file"
-                accept=".pdf,.doc,.docx"
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setResumeFile(file);
-                }}
-              />
-              <UploadCloud size={24} className="mx-auto text-[var(--color-muted-foreground)] mb-2" />
-              {resumeFile ? (
-                <p className="text-sm font-medium text-[var(--color-brand)]">{resumeFile.name}</p>
-              ) : (
-                <>
-                  <p className="text-sm font-medium text-[var(--color-foreground)]">Click to upload or drag and drop</p>
-                  <p className="text-xs text-[var(--color-muted-foreground)] mt-1">PDF, DOC, DOCX (Max. 5MB)</p>
-                </>
-              )}
-            </div>
+            {profileResumeName && !resumeFile ? (
+              <div className="flex items-center justify-between p-3.5 border border-[var(--color-brand)] bg-[var(--color-brand-light)]/30 rounded-lg">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="p-2 rounded bg-[var(--color-brand)] text-white shrink-0">
+                    <FileText size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[var(--color-foreground)] truncate">
+                      Using default resume: {profileResumeName}
+                    </p>
+                    <p className="text-xs text-[var(--color-muted-foreground)]">
+                      Saved from your profile
+                    </p>
+                  </div>
+                </div>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setResumeFile(file);
+                    }}
+                  />
+                  <Button type="button" variant="outline" size="sm" className="text-xs cursor-pointer">
+                    Replace File
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="border-2 border-dashed border-[var(--color-border)] rounded-lg p-6 text-center hover:bg-[var(--color-muted)] transition-colors cursor-pointer relative">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) setResumeFile(file);
+                  }}
+                />
+                <UploadCloud size={24} className="mx-auto text-[var(--color-muted-foreground)] mb-2" />
+                {resumeFile ? (
+                  <p className="text-sm font-medium text-[var(--color-brand)]">{resumeFile.name}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-[var(--color-foreground)]">Click to upload or drag and drop</p>
+                    <p className="text-xs text-[var(--color-muted-foreground)] mt-1">PDF, DOC, DOCX (Max. 5MB)</p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {resumeFile && profileResumeName && (
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setResumeFile(null)}
+                  className="text-xs text-[var(--color-brand)] hover:underline flex items-center gap-1 mt-1 cursor-pointer"
+                >
+                  <X size={12} /> Use default profile resume instead
+                </button>
+              </div>
+            )}
+
             <p className="text-xs text-[var(--color-muted-foreground)]">
-              Note: Resume storage is optional — your application will be submitted either way.
+              {profileResumeName 
+                ? "Your default resume will be used if you don't upload a new one." 
+                : "Note: Resume storage is optional — your application will be submitted either way."}
             </p>
           </div>
 

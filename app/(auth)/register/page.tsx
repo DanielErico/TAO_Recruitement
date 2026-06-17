@@ -68,7 +68,10 @@ export default function RegisterPage() {
           role: "candidate",
         });
 
-        router.push("/candidate");
+        // Send new candidates to onboarding to complete their profile
+        // Use window.location.href for a hard navigation so the server-side
+        // CandidateLayout runs fresh and picks up the new cookies.
+        window.location.href = "/candidate/onboarding";
       }
     } catch (err: any) {
       console.error("Registration error:", err);

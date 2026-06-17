@@ -24,6 +24,9 @@ import {
   User,
   Clock,
   Target,
+  Phone,
+  MapPin,
+  Link2,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -55,7 +58,12 @@ interface ClientProps {
     resume_url: string | null;
     portfolio_url: string | null;
     cover_letter: string | null;
-    candidate: { id: string; full_name: string; email: string };
+    candidate: { 
+      id: string; 
+      full_name: string; 
+      email: string; 
+      candidate_profiles?: any;
+    };
     job: { id: string; title: string; description: string; requirements: string };
   };
   /** Primary: new candidate_ai_analysis table */
@@ -727,36 +735,80 @@ export function ApplicationReviewClient({
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-4 space-y-4 text-sm">
+              {/* Email */}
               <div className="flex items-center gap-2 text-[var(--color-muted-foreground)]">
-                <Mail size={15} />
-                <span className="truncate">{application.candidate.email}</span>
+                <Mail size={15} className="shrink-0" />
+                <span className="truncate" title={application.candidate.email}>{application.candidate.email}</span>
               </div>
 
-              {application.portfolio_url && (
-                <div className="flex items-center gap-2">
-                  <Globe size={15} className="text-[var(--color-muted-foreground)]" />
-                  <a
-                    href={application.portfolio_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[var(--color-brand)] hover:underline flex items-center gap-0.5 truncate"
-                  >
-                    Portfolio / Website <ExternalLink size={10} />
-                  </a>
-                </div>
-              )}
+              {/* Phone */}
+              {(() => {
+                const profile = Array.isArray(application.candidate.candidate_profiles)
+                  ? application.candidate.candidate_profiles[0]
+                  : application.candidate.candidate_profiles;
+                return (
+                  <>
+                    {profile?.phone && (
+                      <div className="flex items-center gap-2 text-[var(--color-muted-foreground)]">
+                        <Phone size={15} className="shrink-0" />
+                        <span>{profile.phone}</span>
+                      </div>
+                    )}
 
-              {application.resume_url ? (
-                <Button asChild size="sm" className="w-full mt-2">
-                  <a href={application.resume_url} target="_blank" rel="noopener noreferrer">
-                    <FileText size={14} className="mr-1.5" /> View Uploaded CV
-                  </a>
-                </Button>
-              ) : (
-                <div className="text-xs text-[var(--color-muted-foreground)] italic bg-slate-50 p-2 rounded border border-slate-200 text-center">
-                  No CV uploaded
-                </div>
-              )}
+                    {/* Location */}
+                    {profile?.location && (
+                      <div className="flex items-center gap-2 text-[var(--color-muted-foreground)]">
+                        <MapPin size={15} className="shrink-0" />
+                        <span>{profile.location}</span>
+                      </div>
+                    )}
+
+                    {/* LinkedIn Profile */}
+                    {profile?.linkedin_url && (
+                      <div className="flex items-center gap-2">
+                        <Link2 size={15} className="text-[var(--color-muted-foreground)] shrink-0" />
+                        <a
+                          href={profile.linkedin_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--color-brand)] hover:underline flex items-center gap-0.5 truncate text-xs font-semibold"
+                        >
+                          LinkedIn Profile <ExternalLink size={9} />
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Portfolio / Website */}
+                    {(application.portfolio_url || profile?.portfolio_url) && (
+                      <div className="flex items-center gap-2">
+                        <Globe size={15} className="text-[var(--color-muted-foreground)] shrink-0" />
+                        <a
+                          href={application.portfolio_url || profile?.portfolio_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[var(--color-brand)] hover:underline flex items-center gap-0.5 truncate text-xs font-semibold"
+                        >
+                          Portfolio / Website <ExternalLink size={9} />
+                        </a>
+                      </div>
+                    )}
+
+                    {/* Resume / CV view button */}
+                    {(application.resume_url || profile?.resume_url) ? (
+                      <Button asChild size="sm" className="w-full mt-2 cursor-pointer">
+                        <a href={application.resume_url || profile?.resume_url} target="_blank" rel="noopener noreferrer">
+                          <FileText size={14} className="mr-1.5" /> 
+                          {application.resume_url ? "View Uploaded CV" : "View Profile default CV"}
+                        </a>
+                      </Button>
+                    ) : (
+                      <div className="text-xs text-[var(--color-muted-foreground)] italic bg-slate-50 p-2 rounded border border-slate-200 text-center">
+                        No CV uploaded
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
 

@@ -4,20 +4,16 @@ export const dynamic = "force-dynamic";
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Eye, EyeOff } from "lucide-react";
-import type { Metadata } from "next";
 
 import { Suspense } from "react";
 
 function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createClient();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +23,7 @@ function LoginForm() {
 
   const urlError = searchParams.get("error");
 
-  // ── Hardcoded demo accounts (fallback when DB is unreachable) ──
+  // ── Hardcoded demo accounts (dev / offline shortcut — any password) ──
   const DEMO_ACCOUNTS: Record<string, { role: string; fullName: string; id: string }> = {
     "admin@tao.org":     { role: "admin",     fullName: "TAO Admin",     id: "11111111-1111-1111-1111-111111111111" },
     "recruiter@tao.org": { role: "recruiter", fullName: "TAO Recruiter", id: "22222222-2222-2222-2222-222222222222" },
@@ -39,55 +35,45 @@ function LoginForm() {
     setError(null);
     setLoading(true);
 
+    const lowerEmail = email.trim().toLowerCase();
+
     try {
-      // ── Helper: set cookies and redirect ──
-      const loginWithProfile = (role: string, fullName: string, id: string, emailVal: string) => {
-        const dest = role === "admin" ? "/admin" : role === "recruiter" ? "/recruiter" : "/candidate";
-        document.cookie = `user_role=${role}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_id=${id}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_email=${emailVal}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_name=${fullName}; path=/; max-age=604800; SameSite=Lax`;
-        router.push(dest);
-      };
-
-      // 1. Try live DB lookup with a 6-second timeout
-      let profile: { id: string; role: string; full_name: string } | null = null;
-      try {
-        const dbPromise = supabase
-          .from("user_profiles")
-          .select("id, role, full_name")
-          .eq("email", email.trim().toLowerCase())
-          .maybeSingle();
-
-        const timeoutPromise = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), 6000)
-        );
-
-        const result = await Promise.race([dbPromise, timeoutPromise]);
-        profile = (result as any)?.data ?? null;
-      } catch {
-        // DB unreachable — will use fallback below
-      }
-
-      if (profile) {
-        loginWithProfile(profile.role, profile.full_name, profile.id, email);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Fallback to hardcoded demo accounts (works offline / restricted network)
-      const lowerEmail = email.trim().toLowerCase();
+      // ── 1. Demo account shortcut (dev only) ──────────────────
       const demo = DEMO_ACCOUNTS[lowerEmail];
       if (demo) {
-        loginWithProfile(demo.role, demo.fullName, demo.id, lowerEmail);
-        setLoading(false);
+        document.cookie = `user_role=${demo.role}; path=/; max-age=604800; SameSite=Lax`;
+        document.cookie = `mock_user_id=${demo.id}; path=/; max-age=604800; SameSite=Lax`;
+        document.cookie = `mock_user_email=${lowerEmail}; path=/; max-age=604800; SameSite=Lax`;
+        document.cookie = `mock_user_name=${demo.fullName}; path=/; max-age=604800; SameSite=Lax`;
+        const dest = demo.role === "admin" ? "/admin" : demo.role === "recruiter" ? "/recruiter" : "/candidate";
+        window.location.href = dest;
         return;
       }
 
-      // 3. Unknown email — show a helpful message
-      setError(
-        `No account found for "${email}". Demo accounts: admin@tao.org, recruiter@tao.org, candidate@tao.org (any password).`
-      );
+      // ── 2. Real authentication via server-side API ───────────
+      // The API route calls supabase.auth.signInWithPassword() server-side,
+      // validates the password, looks up the user's role, and sets cookies.
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: lowerEmail, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Sign in failed. Please check your credentials.");
+        return;
+      }
+
+      // Cookies are already set server-side; do a hard navigation so the
+      // dashboard layout reads the fresh cookies on first render.
+      const dest =
+        data.role === "admin" ? "/admin" :
+        data.role === "recruiter" ? "/recruiter" :
+        "/candidate";
+
+      window.location.href = dest;
     } catch (err: any) {
       console.error("Login error:", err);
       setError(err.message || "An unexpected error occurred during sign in.");
@@ -95,6 +81,7 @@ function LoginForm() {
       setLoading(false);
     }
   }
+
 
   return (
     <div className="space-y-6 animate-fade-in">

@@ -55,7 +55,15 @@ export default async function RecruiterApplicationReviewPage({
       candidate:user_profiles (
         id,
         full_name,
-        email
+        email,
+        candidate_profiles (
+          phone,
+          linkedin_url,
+          portfolio_url,
+          location,
+          resume_url,
+          resume_name
+        )
       ),
       job:jobs (
         id,

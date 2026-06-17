@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Menu,
   X,
+  User,
 } from "lucide-react";
 import type { UserRole } from "@/types";
 
@@ -46,6 +47,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Browse Jobs", href: "/candidate/jobs", icon: Briefcase, roles: ["candidate"] },
   { label: "My Applications", href: "/candidate/applications", icon: FileText, roles: ["candidate"] },
   { label: "My Interviews", href: "/candidate/interviews", icon: MessageSquare, roles: ["candidate"] },
+  { label: "My Profile", href: "/candidate/profile", icon: User, roles: ["candidate"] },
 ];
 
 interface SidebarProps {
