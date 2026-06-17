@@ -57,49 +57,51 @@ async function createAccounts() {
   for (const userConfig of testUsers) {
     console.log(`Processing: ${userConfig.email} (${userConfig.role})`);
     
-    // Attempt creation
-    let { data: { user }, error: createError } = await supabaseAdmin.auth.admin.createUser({
-      email: userConfig.email,
-      password: userConfig.password,
-      email_confirm: true,
-      user_metadata: {
-        full_name: userConfig.fullName,
-        role: userConfig.role
-      }
-    });
+    let user = null;
+    let createError = null;
 
-    // If already exists, delete and recreate
-    if (createError && (createError.message.includes('already registered') || createError.message.includes('already exists') || createError.status === 422)) {
-      console.log(`- User already exists. Finding user by email to delete and reset...`);
-      // We can find the user by calling getUser or finding them. Since we can't easily fetch user by email without listUsers,
-      // let's try to listUsers just for this single fallback (or since listUsers timed out, let's see).
-      // Wait, listUsers is the only way to find user ID by email in Supabase admin API, unless we query auth.users database table.
-      // Can we query the database auth.users table? Yes! supabaseAdmin is a Postgres client in a way, but we can also just run listUsers once.
-      // Let's call listUsers to get the ID.
-      try {
-        const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-        if (!listError && users) {
-          const existingUser = users.find(u => u.email === userConfig.email);
-          if (existingUser) {
-            console.log(`- Deleting user ${existingUser.id}...`);
-            await supabaseAdmin.auth.admin.deleteUser(existingUser.id);
-            // Re-create
-            const retryRes = await supabaseAdmin.auth.admin.createUser({
-              email: userConfig.email,
-              password: userConfig.password,
-              email_confirm: true,
-              user_metadata: {
-                full_name: userConfig.fullName,
-                role: userConfig.role
-              }
-            });
-            user = retryRes.data.user;
-            createError = retryRes.error;
-          }
-        }
-      } catch (err) {
-        console.error(`- Failed to reset existing user:`, err.message);
+    try {
+      // 1. Check if user profile already exists
+      const { data: profileData, error: profileError } = await supabaseAdmin
+        .from('user_profiles')
+        .select('id')
+        .eq('email', userConfig.email)
+        .maybeSingle();
+
+      if (profileError) {
+        throw profileError;
       }
+
+      if (profileData) {
+        console.log(`- User exists with profile ID: ${profileData.id}. Updating password/metadata...`);
+        const { data: updateRes, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(profileData.id, {
+          password: userConfig.password,
+          user_metadata: {
+            full_name: userConfig.fullName,
+            role: userConfig.role
+          }
+        });
+        if (updateError) {
+          throw updateError;
+        }
+        user = updateRes.user;
+      } else {
+        console.log(`- User profile not found. Creating new user...`);
+        const { data: createRes, error: err } = await supabaseAdmin.auth.admin.createUser({
+          email: userConfig.email,
+          password: userConfig.password,
+          email_confirm: true,
+          user_metadata: {
+            full_name: userConfig.fullName,
+            role: userConfig.role
+          }
+        });
+        user = createRes.user;
+        createError = err;
+      }
+    } catch (err) {
+      console.error(`- Failed to process user:`, err.message);
+      createError = err;
     }
 
     if (createError) {

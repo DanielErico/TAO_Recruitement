@@ -23,13 +23,6 @@ function LoginForm() {
 
   const urlError = searchParams.get("error");
 
-  // ── Hardcoded demo accounts (dev / offline shortcut — any password) ──
-  const DEMO_ACCOUNTS: Record<string, { role: string; fullName: string; id: string }> = {
-    "admin@tao.org":     { role: "admin",     fullName: "TAO Admin",     id: "11111111-1111-1111-1111-111111111111" },
-    "recruiter@tao.org": { role: "recruiter", fullName: "TAO Recruiter", id: "22222222-2222-2222-2222-222222222222" },
-    "candidate@tao.org": { role: "candidate", fullName: "TAO Candidate", id: "33333333-3333-3333-3333-333333333333" },
-  };
-
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -38,19 +31,7 @@ function LoginForm() {
     const lowerEmail = email.trim().toLowerCase();
 
     try {
-      // ── 1. Demo account shortcut (dev only) ──────────────────
-      const demo = DEMO_ACCOUNTS[lowerEmail];
-      if (demo) {
-        document.cookie = `user_role=${demo.role}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_id=${demo.id}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_email=${lowerEmail}; path=/; max-age=604800; SameSite=Lax`;
-        document.cookie = `mock_user_name=${demo.fullName}; path=/; max-age=604800; SameSite=Lax`;
-        const dest = demo.role === "admin" ? "/admin" : demo.role === "recruiter" ? "/recruiter" : "/candidate";
-        window.location.href = dest;
-        return;
-      }
-
-      // ── 2. Real authentication via server-side API ───────────
+      // Real authentication via server-side API
       // The API route calls supabase.auth.signInWithPassword() server-side,
       // validates the password, looks up the user's role, and sets cookies.
       const res = await fetch("/api/auth/login", {
@@ -155,6 +136,34 @@ function LoginForm() {
           {loading ? "Signing in…" : "Sign in"}
         </Button>
       </form>
+
+      {/* Seeded Testing Credentials Helper */}
+      <div className="rounded-lg border border-[var(--color-border)] bg-slate-50/50 p-4 space-y-2.5">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-muted-foreground)]">Seeded Testing Accounts</h4>
+        <div className="grid grid-cols-1 gap-2 text-xs text-[var(--color-muted-foreground)]">
+          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
+            <div>
+              <span className="font-semibold text-[var(--color-foreground)]">Recruiter:</span>
+              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">recruiter@tao.org</code>
+            </div>
+            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
+          </div>
+          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
+            <div>
+              <span className="font-semibold text-[var(--color-foreground)]">Admin:</span>
+              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">admin@tao.org</code>
+            </div>
+            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
+          </div>
+          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
+            <div>
+              <span className="font-semibold text-[var(--color-foreground)]">Candidate:</span>
+              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">candidate@tao.org</code>
+            </div>
+            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
+          </div>
+        </div>
+      </div>
 
       <p className="text-center text-sm text-muted-foreground">
         New candidate?{" "}
