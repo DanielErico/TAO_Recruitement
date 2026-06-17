@@ -14,13 +14,6 @@
  * ============================================================
  */
 
-// Define global browser class mocks to prevent pdfjs-dist inside pdf-parse from crashing in Node.js
-if (typeof global !== "undefined") {
-  if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class DOMMatrix {};
-  if (!(global as any).ImageData) (global as any).ImageData = class ImageData {};
-  if (!(global as any).Path2D) (global as any).Path2D = class Path2D {};
-}
-
 // Minimum character count to consider extracted text valid
 const MIN_TEXT_LENGTH = 100;
 
@@ -84,21 +77,23 @@ export async function extractCVText(
 }
 
 // ── PDF Extraction ──────────────────────────────────────────────
+// Uses pdf-parse v1.1.1 — a simple buffer-based function with no Web Workers,
+// no pdfjs-dist worker bundling, and no canvas dependencies.
+// This is the only reliable approach for Vercel serverless functions.
 async function extractPDF(buffer: Buffer, fileName: string): Promise<CVExtractionResult> {
-  let parser: any = null;
   try {
-    // pdf-parse: pure Node.js, no Web Workers, no canvas — works on Vercel.
-    // Dynamic import to avoid module-level side-effects during Next.js build.
-    const { PDFParse } = await import("pdf-parse");
+    // Dynamic import avoids Next.js build-time side effects.
+    // pdf-parse v1.1.1 exports a single default async function.
+    const pdfParse = (await import("pdf-parse")).default;
 
-    parser = new PDFParse({
-      data: new Uint8Array(buffer),
+    const data = await pdfParse(buffer, {
+      // max: 0 means extract ALL pages (no page limit)
+      max: 0,
     });
 
-    const data = await parser.getText();
     const rawText = data.text ?? "";
     const cleaned = cleanText(rawText);
-    const numpages = data.pages?.length ?? 0;
+    const numpages = data.numpages ?? 0;
 
     console.log(
       `[CVExtractor] PDF extracted: ${numpages} pages, ${cleaned.length} chars`
@@ -129,10 +124,6 @@ async function extractPDF(buffer: Buffer, fileName: string): Promise<CVExtractio
       error: `PDF text extraction failed: ${err.message}`,
       charCount: 0,
     };
-  } finally {
-    if (parser && typeof parser.destroy === "function") {
-      await parser.destroy().catch(() => {});
-    }
   }
 }
 
