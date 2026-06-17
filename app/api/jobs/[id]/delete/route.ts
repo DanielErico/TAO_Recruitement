@@ -13,14 +13,14 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Check admin role
+  // Check admin or recruiter role
   const { data: profile } = await supabase
     .from("user_profiles")
     .select("role")
     .eq("id", user.id)
     .single();
 
-  if (profile?.role !== "admin") {
+  if (profile?.role !== "admin" && profile?.role !== "recruiter") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

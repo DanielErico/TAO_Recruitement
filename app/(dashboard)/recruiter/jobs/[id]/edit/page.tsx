@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { JobForm } from "@/components/jobs/JobForm";
 import { Button } from "@/components/ui/button";
 import { formatDate, getStatusConfig } from "@/lib/utils";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
+import { DeleteJobButton } from "@/components/jobs/DeleteJobButton";
 import type { Metadata } from "next";
 import type { Department, Job } from "@/types";
 
@@ -76,8 +77,8 @@ export default async function EditJobPage({
           </div>
         </div>
 
-        {/* Archive / Delete — admin only */}
-        {role === "admin" && (
+        {/* Archive / Delete — admin and recruiter */}
+        {["admin", "recruiter"].includes(role) && (
           <div className="flex items-center gap-2">
             <ArchiveDeleteButtons jobId={id} status={job.status} />
           </div>
@@ -113,12 +114,7 @@ function ArchiveDeleteButtons({
           </Button>
         </form>
       )}
-      <form action={`/api/jobs/${jobId}/delete`} method="POST">
-        <Button type="submit" variant="destructive" size="sm">
-          <Trash2 size={13} />
-          Delete
-        </Button>
-      </form>
+      <DeleteJobButton jobId={jobId} />
     </>
   );
 }

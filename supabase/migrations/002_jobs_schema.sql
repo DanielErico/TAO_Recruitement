@@ -106,12 +106,12 @@ CREATE POLICY "Recruiters can update their own jobs"
     )
   );
 
-CREATE POLICY "Admins can delete jobs"
+CREATE POLICY "Recruiters and admins can delete jobs"
   ON jobs FOR DELETE
   USING (
     EXISTS (
       SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role = 'admin'
+      WHERE id = auth.uid() AND role IN ('admin', 'recruiter')
     )
   );
 
