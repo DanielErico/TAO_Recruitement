@@ -137,33 +137,6 @@ function LoginForm() {
         </Button>
       </form>
 
-      {/* Seeded Testing Credentials Helper */}
-      <div className="rounded-lg border border-[var(--color-border)] bg-slate-50/50 p-4 space-y-2.5">
-        <h4 className="text-xs font-bold uppercase tracking-wider text-[var(--color-muted-foreground)]">Seeded Testing Accounts</h4>
-        <div className="grid grid-cols-1 gap-2 text-xs text-[var(--color-muted-foreground)]">
-          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
-            <div>
-              <span className="font-semibold text-[var(--color-foreground)]">Recruiter:</span>
-              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">recruiter@tao.org</code>
-            </div>
-            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
-          </div>
-          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
-            <div>
-              <span className="font-semibold text-[var(--color-foreground)]">Admin:</span>
-              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">admin@tao.org</code>
-            </div>
-            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
-          </div>
-          <div className="flex items-center justify-between border-b border-[var(--color-border)]/50 pb-1.5 last:border-0 last:pb-0">
-            <div>
-              <span className="font-semibold text-[var(--color-foreground)]">Candidate:</span>
-              <code className="ml-1 bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">candidate@tao.org</code>
-            </div>
-            <code className="bg-white px-1.5 py-0.5 rounded border border-[var(--color-border)]">password123</code>
-          </div>
-        </div>
-      </div>
 
       <p className="text-center text-sm text-muted-foreground">
         New candidate?{" "}

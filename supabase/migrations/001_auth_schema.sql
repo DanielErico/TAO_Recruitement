@@ -115,19 +115,13 @@ CREATE POLICY "Users can view own profile"
 CREATE POLICY "Admins can view all profiles"
   ON user_profiles FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role = 'admin'
-    )
+    (auth.jwt() -> 'user_metadata' ->> 'role') = 'admin'
   );
 
 CREATE POLICY "Recruiters can view all profiles"
   ON user_profiles FOR SELECT
   USING (
-    EXISTS (
-      SELECT 1 FROM user_profiles
-      WHERE id = auth.uid() AND role IN ('admin', 'recruiter')
-    )
+    (auth.jwt() -> 'user_metadata' ->> 'role') IN ('admin', 'recruiter')
   );
 
 CREATE POLICY "Users can update own profile"

@@ -46,7 +46,9 @@ export async function POST(request: NextRequest) {
     const userId = authData.user.id;
 
     // ── 2. Look up the user's profile (role, name) ──────────────
-    const { data: profile, error: profileError } = await supabase
+    // Use a fresh admin client to query user_profiles to bypass RLS entirely during login
+    const adminDb = createAdminClient();
+    const { data: profile, error: profileError } = await adminDb
       .from("user_profiles")
       .select("id, role, full_name, email")
       .eq("id", userId)
@@ -62,27 +64,36 @@ export async function POST(request: NextRequest) {
 
     // Profile should always exist (created by DB trigger on signup), but handle edge case
     if (!profile) {
-      // Create the missing profile on the fly
       const userMeta = authData.user.user_metadata || {};
-      const fallbackName = userMeta.full_name || email.split("@")[0];
       const fallbackRole = userMeta.role || "candidate";
 
-      await supabase.from("user_profiles").upsert({
+      // Do NOT create profiles on the fly for admin and recruiter roles
+      if (fallbackRole === "admin" || fallbackRole === "recruiter") {
+        return NextResponse.json(
+          { error: "Account profile is missing. Please contact your administrator." },
+          { status: 403 }
+        );
+      }
+
+      const fallbackName = userMeta.full_name || email.split("@")[0];
+
+      // Safe to upsert candidate on the fly
+      await adminDb.from("user_profiles").upsert({
         id: userId,
         email: email.trim().toLowerCase(),
         full_name: fallbackName,
-        role: fallbackRole,
+        role: "candidate",
       });
 
       // Set session cookies
       const cookieStore = await cookies();
-      cookieStore.set("user_role", fallbackRole, { maxAge: 604800, path: "/" });
+      cookieStore.set("user_role", "candidate", { maxAge: 604800, path: "/" });
       cookieStore.set("mock_user_id", userId, { maxAge: 604800, path: "/" });
       cookieStore.set("mock_user_email", email.trim().toLowerCase(), { maxAge: 604800, path: "/" });
       cookieStore.set("mock_user_name", fallbackName, { maxAge: 604800, path: "/" });
 
       return NextResponse.json({
-        role: fallbackRole,
+        role: "candidate",
         fullName: fallbackName,
         id: userId,
         email: email.trim().toLowerCase(),
