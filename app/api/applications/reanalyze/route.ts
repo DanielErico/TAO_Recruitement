@@ -127,6 +127,13 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (aiError) {
+    return NextResponse.json(
+      { error: `AI Analysis failed: ${aiError}` },
+      { status: 500 }
+    );
+  }
+
   // ── Upsert candidate_ai_analysis (replace existing) ──────────
   const { error: upsertError } = await supabase
     .from("candidate_ai_analysis")
