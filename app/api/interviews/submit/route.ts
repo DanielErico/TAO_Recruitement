@@ -166,6 +166,15 @@ export async function POST(request: NextRequest) {
     if (switchedTabs) {
       recruiterSummary = `⚠️ INTEGRITY WARNING: Tab switching detected. The interview was automatically terminated and flagged.\n\n${recruiterSummary}`;
       aiRationale = `FLAGGED EVENT: Candidate attempted to switch browser tabs or windows during this interview. Session was closed automatically.\n\n${aiRationale}`;
+      
+      // Override all scores to 0 and recommendation to not_recommended to penalize cheating
+      evaluation.overall_score = 0;
+      evaluation.technical_score = 0;
+      evaluation.communication_score = 0;
+      evaluation.experience_score = 0;
+      evaluation.problem_solving_score = 0;
+      evaluation.culture_fit_score = 0;
+      evaluation.recommendation = "not_recommended";
     }
 
     const { error: evalError } = await supabase
