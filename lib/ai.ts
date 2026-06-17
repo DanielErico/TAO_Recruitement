@@ -30,17 +30,22 @@ function httpsPost(
       port: 443,
       path,
       method: "POST",
-      timeout: timeoutMs,
       headers: {
         ...headers,
         "Content-Length": Buffer.byteLength(body),
       },
     };
 
+    // Strict absolute timeout timer
+    const timer = setTimeout(() => {
+      req.destroy(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
     const req = https.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => {
+        clearTimeout(timer);
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
           resolve(data);
         } else {
@@ -49,11 +54,11 @@ function httpsPost(
       });
     });
 
-    req.on("timeout", () => {
-      req.destroy(new Error("Request timed out after " + timeoutMs + "ms"));
+    req.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
     });
 
-    req.on("error", reject);
     req.write(body);
     req.end();
   });
@@ -122,7 +127,8 @@ export async function analyzeCV(
   cvText: string,
   jobTitle: string,
   jobDescription: string,
-  jobRequirements: string
+  jobRequirements: string,
+  timeoutMs = 60000
 ): Promise<CVAnalysisResult> {
   const apiKey = process.env.NVIDIA_API_KEY;
 
@@ -215,7 +221,7 @@ Analyze the CV above. Return ONLY valid JSON.`;
       Authorization: `Bearer ${apiKey}`,
     },
     requestBody,
-    60000
+    timeoutMs
   );
 
   const apiResult = JSON.parse(rawResponse);

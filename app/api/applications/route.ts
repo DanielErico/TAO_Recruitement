@@ -175,8 +175,11 @@ export async function POST(request: NextRequest) {
       if (profile?.resume_url) {
         resumeUrl = profile.resume_url;
         cvFileName = profile.resume_name || "resume.pdf";
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
         try {
-          const fileResponse = await fetch(profile.resume_url);
+          const fileResponse = await fetch(profile.resume_url, { signal: controller.signal });
+          clearTimeout(timeoutId);
           if (fileResponse.ok) {
             const contentType = fileResponse.headers.get("content-type") || "application/pdf";
             cvMimeType = contentType.split(";")[0].trim();
@@ -187,6 +190,7 @@ export async function POST(request: NextRequest) {
             console.warn(`[Applications] Default CV URL inaccessible: HTTP ${fileResponse.status}`);
           }
         } catch (err: any) {
+          clearTimeout(timeoutId);
           console.error("[Applications] Failed to download default profile CV:", err.message);
         }
       }
@@ -227,7 +231,8 @@ export async function POST(request: NextRequest) {
           extractedText,
           job.title,
           job.description,
-          job.requirements
+          job.requirements,
+          8000 // 8 seconds timeout limit to prevent gateway 504
         );
 
         // High fit score → auto-invite to interview
