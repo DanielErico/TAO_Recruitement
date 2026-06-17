@@ -2,10 +2,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatDate, getStatusConfig } from "@/lib/utils";
-import { Plus, Search, Briefcase, Users } from "lucide-react";
+import { Plus, Search, Briefcase } from "lucide-react";
+import { JobsTable } from "@/components/jobs/JobsTable";
 import type { Metadata } from "next";
 import type { Job } from "@/types";
 
@@ -137,73 +136,7 @@ export default async function JobsPage({
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-[var(--color-border)] bg-white overflow-hidden">
-          <table className="data-table w-full">
-            <thead className="bg-[var(--color-muted)]">
-              <tr>
-                <th>Job Title</th>
-                <th>Department</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Deadline</th>
-                <th>Applicants</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(jobs as (Job & { department: { name: string } | null })[]).map((job) => {
-                const statusCfg = getStatusConfig(job.status);
-                const typeLabels: Record<string, string> = {
-                  full_time: "Full Time",
-                  part_time: "Part Time",
-                  contract: "Contract",
-                  internship: "Internship",
-                };
-                return (
-                  <tr key={job.id}>
-                    <td>
-                      <Link
-                        href={`/recruiter/jobs/${job.id}`}
-                        className="font-medium text-[var(--color-foreground)] hover:text-[var(--color-brand)] transition-colors"
-                      >
-                        {job.title}
-                      </Link>
-                    </td>
-                    <td className="text-[var(--color-muted-foreground)]">
-                      {job.department?.name ?? "—"}
-                    </td>
-                    <td className="text-[var(--color-muted-foreground)] text-xs">
-                      {typeLabels[job.employment_type] ?? job.employment_type}
-                    </td>
-                    <td>
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${statusCfg.className}`}>
-                        {statusCfg.label}
-                      </span>
-                    </td>
-                    <td className="text-[var(--color-muted-foreground)] text-xs">
-                      {job.application_deadline
-                        ? formatDate(job.application_deadline)
-                        : "—"}
-                    </td>
-                    <td>
-                      <span className="inline-flex items-center gap-1 text-xs text-[var(--color-muted-foreground)]">
-                        <Users size={12} />
-                        {job.applicant_count ?? 0}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="flex items-center gap-2 justify-end">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/recruiter/jobs/${job.id}/edit`}>Edit</Link>
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <JobsTable initialJobs={jobs as any} />
       )}
     </div>
   );
