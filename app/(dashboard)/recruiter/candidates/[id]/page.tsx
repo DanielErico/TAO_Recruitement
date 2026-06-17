@@ -83,7 +83,7 @@ export default async function RecruiterCandidateProfilePage({
           ),
           cv_analysis:cv_analyses (
             job_fit_score,
-            recommendation
+            recommendations
           )
         `)
         .eq("candidate_id", candidateId)
@@ -100,6 +100,20 @@ export default async function RecruiterCandidateProfilePage({
 
   if (userProfileRes.error || !userProfileRes.data) {
     notFound();
+  }
+
+  // Log retrieval errors to ease developer troubleshooting
+  if (candidateProfileRes.error) {
+    console.error("[RecruiterCandidateProfile] candidateProfile error:", candidateProfileRes.error.message);
+  }
+  if (applicationsRes.error) {
+    console.error("[RecruiterCandidateProfile] applications error:", applicationsRes.error.message);
+  }
+  if (interviewsRes.error) {
+    console.error("[RecruiterCandidateProfile] interviews error:", interviewsRes.error.message);
+  }
+  if (evaluationsRes.error) {
+    console.error("[RecruiterCandidateProfile] evaluations error:", evaluationsRes.error.message);
   }
 
   const userProfile = userProfileRes.data;
