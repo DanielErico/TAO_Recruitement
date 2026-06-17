@@ -14,6 +14,13 @@
  * ============================================================
  */
 
+// Define global browser class mocks to prevent pdfjs-dist inside pdf-parse from crashing in Node.js
+if (typeof global !== "undefined") {
+  if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class DOMMatrix {};
+  if (!(global as any).ImageData) (global as any).ImageData = class ImageData {};
+  if (!(global as any).Path2D) (global as any).Path2D = class Path2D {};
+}
+
 // Minimum character count to consider extracted text valid
 const MIN_TEXT_LENGTH = 100;
 
