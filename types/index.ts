@@ -96,14 +96,13 @@ export interface Application {
   updated_at: string;
 }
 
-// ── CV Analysis ───────────────────────────────────────────────
+// ── CV Analysis (legacy — cv_analyses table) ──────────────────
 
 export interface CVAnalysis {
   id: string;
   application_id: string;
   candidate_id: string;
   job_id: string;
-  // Extracted fields
   full_name?: string;
   email?: string;
   phone?: string;
@@ -112,12 +111,11 @@ export interface CVAnalysis {
   education: CVEducation[];
   certifications: string[];
   work_experience: CVWorkExperience[];
-  // AI output
   professional_summary: string;
   strengths: string[];
   weaknesses: string[];
   recommendations: string;
-  job_fit_score: number; // 0–100
+  job_fit_score: number;
   raw_json: Record<string, unknown>;
   created_at: string;
 }
@@ -136,6 +134,48 @@ export interface CVWorkExperience {
   end_date?: string;
   current?: boolean;
   description?: string;
+}
+
+// ── Candidate AI Analysis (new — candidate_ai_analysis table) ──
+
+export interface CandidateAIWorkExperience {
+  job_title: string;
+  company: string;
+  duration: string;
+  responsibilities: string[];
+}
+
+export interface CandidateAIEducation {
+  institution: string;
+  degree: string;
+  year: string;
+}
+
+export interface CandidateAIAnalysis {
+  id: string;
+  application_id: string;
+  candidate_id: string;
+  job_id: string;
+  // CV Extraction
+  extracted_text: string;
+  extraction_status: "pending" | "success" | "failed" | "empty" | "unsupported";
+  extraction_error?: string;
+  // AI Analysis
+  professional_summary: string;
+  skills: string[];
+  strengths: string[];
+  risks: string[];
+  years_of_experience: string;
+  work_experience: CandidateAIWorkExperience[];
+  education: CandidateAIEducation[];
+  certifications: string[];
+  recommended_role_fit: string;
+  overall_score: number; // 0–100
+  // Metadata
+  ai_model: string;
+  analyzed_at?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // ── Interviews ────────────────────────────────────────────────

@@ -1,8 +1,21 @@
-import { CVAnalysis } from "@/types";
+/**
+ * TAO Recruit AI — AI Module
+ * ============================================================
+ * All AI calls to the NVIDIA Nemotron API.
+ *
+ * Functions:
+ *   analyzeCV()                    — CV analysis (rebuilt from scratch)
+ *   generateNextInterviewQuestion() — AI interview conductor
+ *   evaluateInterview()            — Post-interview scoring
+ * ============================================================
+ */
+
 import https from "https";
 
+// ── HTTP Utility ─────────────────────────────────────────────────
 /**
- * Makes an HTTPS request using Node's native https module (more reliable than fetch in some environments).
+ * Makes an HTTPS POST request using Node's native https module.
+ * More reliable than fetch in Vercel serverless environments.
  */
 function httpsPost(
   hostname: string,
@@ -31,13 +44,13 @@ function httpsPost(
         if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
           resolve(data);
         } else {
-          reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 200)}`));
+          reject(new Error(`HTTP ${res.statusCode}: ${data.substring(0, 400)}`));
         }
       });
     });
 
     req.on("timeout", () => {
-      req.destroy(new Error("Request timed out"));
+      req.destroy(new Error("Request timed out after " + timeoutMs + "ms"));
     });
 
     req.on("error", reject);
@@ -46,16 +59,15 @@ function httpsPost(
   });
 }
 
+// ── JSON Cleaner ─────────────────────────────────────────────────
 /**
- * Strips thinking model output (<think> blocks) and markdown code fences from LLM JSON responses.
+ * Strips <think> blocks (reasoning models) and markdown code fences
+ * from LLM responses, isolates the JSON object.
  */
 function cleanJsonContent(content: string): string {
   let cleaned = content.trim();
-  // Remove <think>...</think> blocks produced by reasoning models (e.g. nemotron-ultra)
   cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-  // Remove ```json or ``` fences
   cleaned = cleaned.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "");
-  // Find the first { and last } to isolate the JSON object
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   if (start !== -1 && end !== -1) {
@@ -64,68 +76,108 @@ function cleanJsonContent(content: string): string {
   return cleaned.trim();
 }
 
+// ── CV Analysis Types ────────────────────────────────────────────
+
+export interface CVWorkExperienceAI {
+  job_title: string;
+  company: string;
+  duration: string;
+  responsibilities: string[];
+}
+
+export interface CVEducationAI {
+  institution: string;
+  degree: string;
+  year: string;
+}
+
+export interface CVAnalysisResult {
+  professional_summary: string;
+  skills: string[];
+  strengths: string[];
+  risks: string[];
+  years_of_experience: string;
+  work_experience: CVWorkExperienceAI[];
+  education: CVEducationAI[];
+  certifications: string[];
+  recommended_role_fit: string;
+  overall_score: number;
+}
+
+// ── CV Analysis ──────────────────────────────────────────────────
 /**
- * Analyzes resume text against job description and requirements using the NVIDIA Nemotron API.
- * Uses native Node HTTPS for reliability. Falls back to heuristics on failure.
+ * Analyzes extracted CV text using NVIDIA Nemotron 70B.
+ *
+ * RULES:
+ * - NEVER generates fake/fallback analysis.
+ * - Throws a real error if the API call fails or text is empty.
+ * - Caller is responsible for handling errors and persisting results.
+ *
+ * @param cvText        - Extracted plain text from the CV (must be non-empty)
+ * @param jobTitle      - The job role the candidate applied for
+ * @param jobDescription - Full job description
+ * @param jobRequirements - Job requirements string
  */
-export async function analyzeResume(
-  resumeText: string,
+export async function analyzeCV(
+  cvText: string,
   jobTitle: string,
   jobDescription: string,
   jobRequirements: string
-): Promise<Partial<CVAnalysis>> {
+): Promise<CVAnalysisResult> {
   const apiKey = process.env.NVIDIA_API_KEY;
 
   if (!apiKey) {
-    console.warn("[AI] NVIDIA_API_KEY not set. Using fallback analysis.");
-    return generateFallbackAnalysis(resumeText, jobTitle, jobDescription);
+    throw new Error("NVIDIA_API_KEY environment variable is not set.");
   }
 
-  const systemPrompt = `You are an expert AI recruiting assistant called TAO Recruit AI.
-Your task is to carefully read the candidate's resume text, extract all structured information from it, and evaluate how well the candidate fits the specific job described.
+  if (!cvText || cvText.trim().length < 100) {
+    throw new Error("CV text is too short or empty — cannot perform AI analysis.");
+  }
 
-CRITICAL RULES:
-- Read the ACTUAL resume text provided. Do NOT make up or hallucinate any information.
-- Extract the real name, email, phone, location, skills, education, and experience from the resume.
-- Compare the candidate's ACTUAL skills and background against the ACTUAL job requirements.
-- If the candidate's background does not match the job (e.g., a nurse applying for a web design role), the job_fit_score MUST be low (e.g., 5-20).
-- If the candidate's background strongly matches the job, the score should be high (e.g., 80-95).
-- Compute job_fit_score strictly between 0 and 100 based on real alignment.
+  const systemPrompt = `You are an expert ATS (Applicant Tracking System) AI for TAO Recruit AI.
+Your job is to read the candidate's CV text carefully and produce a structured JSON analysis.
 
-You must respond ONLY with a valid JSON object. Do not include markdown code blocks, introductory text, or any text outside the JSON.
+STRICT RULES:
+1. Read ONLY the CV text provided. Do NOT invent or hallucinate any information.
+2. Extract real names, skills, companies, degrees, dates from the actual CV.
+3. Generate professional_summary based ONLY on what the CV states.
+4. Strengths must be evidenced by the CV (e.g., "5 years AWS experience from CV").
+5. Risks must be based on observable gaps (e.g., "No leadership experience listed").
+6. If no risks exist, return: ["No significant concerns identified"].
+7. overall_score (0–100) must reflect true CV strength for this specific job role.
+8. You MUST respond with ONLY a valid JSON object. No markdown, no text outside JSON.
 
-JSON structure:
+Required JSON structure (return exactly this, no extra fields):
 {
-  "full_name": "extracted from resume",
-  "email": "extracted from resume",
-  "phone": "extracted from resume",
-  "location": "extracted from resume",
-  "skills": ["actual skill 1 from resume", "actual skill 2"],
-  "education": [
-    {
-      "institution": "actual institution name",
-      "degree": "actual degree",
-      "field": "actual field of study",
-      "graduation_year": "actual year"
-    }
-  ],
-  "certifications": ["actual cert 1"],
+  "professional_summary": "Concise recruiter-friendly summary based strictly on CV content. E.g.: DevOps Engineer with 4 years of experience in AWS, Docker, Kubernetes and CI/CD pipelines.",
+  "skills": ["Skill 1", "Skill 2"],
+  "strengths": ["Strength based on CV evidence"],
+  "risks": ["Risk based on CV gap or concern"],
+  "years_of_experience": "4 years",
   "work_experience": [
     {
-      "company": "actual company",
-      "title": "actual job title",
-      "start_date": "MM/YYYY",
-      "end_date": "MM/YYYY or Present",
-      "current": true,
-      "description": "actual duties from resume"
+      "job_title": "Extracted job title",
+      "company": "Extracted company name",
+      "duration": "Jan 2021 – Present",
+      "responsibilities": ["Actual responsibility from CV", "Another responsibility"]
     }
   ],
-  "professional_summary": "honest summary based on what the resume actually says",
-  "strengths": ["genuine strength relevant to THIS specific job"],
-  "weaknesses": ["genuine gap or weakness for THIS specific job"],
-  "recommendations": "specific, honest career advice for this candidate applying to this role",
-  "job_fit_score": 0
+  "education": [
+    {
+      "institution": "University name from CV",
+      "degree": "Degree name from CV",
+      "year": "Graduation year"
+    }
+  ],
+  "certifications": ["Certification name from CV"],
+  "recommended_role_fit": "DevOps Engineer",
+  "overall_score": 82
 }`;
+
+  // Limit CV text to 12,000 chars to stay within token budget while preserving full content
+  const cvTextTruncated = cvText.length > 12000
+    ? cvText.substring(0, 12000) + "\n[... CV truncated at 12,000 characters for token limit ...]"
+    : cvText;
 
   const userContent = `--- JOB ROLE ---
 ${jobTitle}
@@ -136,140 +188,95 @@ ${jobDescription}
 --- JOB REQUIREMENTS ---
 ${jobRequirements}
 
---- CANDIDATE RESUME TEXT (read carefully) ---
-${resumeText.substring(0, 6000)}`;
+--- CANDIDATE CV (read every word carefully) ---
+${cvTextTruncated}
+
+Analyze the CV above. Return ONLY valid JSON.`;
 
   const requestBody = JSON.stringify({
-    model: "meta/llama-3.1-8b-instruct",
+    model: "nvidia/llama-3.1-nemotron-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
     ],
     temperature: 0.1,
-    max_tokens: 1200,
+    max_tokens: 2000,
     stream: false,
-    chat_template_kwargs: { enable_thinking: false },
   });
 
-  console.log("[AI] Calling NVIDIA API for resume analysis...");
-  console.log("[AI] Resume length:", resumeText.length, "chars");
-  console.log("[AI] Job:", jobTitle);
+  console.log("[AI:CV] Calling Nemotron 70B for CV analysis...");
+  console.log("[AI:CV] CV length:", cvText.length, "chars | Job:", jobTitle);
+
+  const rawResponse = await httpsPost(
+    "integrate.api.nvidia.com",
+    "/v1/chat/completions",
+    {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    requestBody,
+    60000
+  );
+
+  const apiResult = JSON.parse(rawResponse);
+  const content = apiResult.choices?.[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Empty response from NVIDIA Nemotron API — no content returned.");
+  }
+
+  console.log("[AI:CV] Raw response (first 400 chars):", content.substring(0, 400));
+
+  const cleanContent = cleanJsonContent(content);
+  let parsed: any;
 
   try {
-    const rawResponse = await httpsPost(
-      "integrate.api.nvidia.com",
-      "/v1/chat/completions",
-      {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      requestBody,
-      60000
+    parsed = JSON.parse(cleanContent);
+  } catch (parseErr: any) {
+    throw new Error(
+      `AI response JSON parsing failed. Raw content: "${content.substring(0, 500)}" — Error: ${parseErr.message}`
     );
-
-    const result = JSON.parse(rawResponse);
-    const content = result.choices?.[0]?.message?.content;
-
-    if (!content) {
-      throw new Error("Empty response content from NVIDIA API");
-    }
-
-    console.log("[AI] Raw LLM content (first 300 chars):", content.substring(0, 300));
-
-    const cleanContent = cleanJsonContent(content);
-    let parsed;
-    try {
-      parsed = JSON.parse(cleanContent);
-    } catch (parseErr: any) {
-      throw new Error(`JSON parsing failed. Raw content: ${content.substring(0, 1000)}. Error: ${parseErr.message}`);
-    }
-
-    console.log("[AI] Analysis complete. Score:", parsed.job_fit_score, "| Name:", parsed.full_name);
-    return parsed;
-  } catch (err: any) {
-    console.error("[AI] NVIDIA Resume Analysis failed:", err.message);
-    console.warn("[AI] Falling back to heuristic analysis.");
-    return generateFallbackAnalysis(resumeText, jobTitle, jobDescription, err);
-  }
-}
-
-/**
- * Heuristics-based fallback resume parser (used only when NVIDIA API is unavailable).
- */
-function generateFallbackAnalysis(
-  resumeText: string,
-  jobTitle: string,
-  jobDescription: string,
-  err?: any
-): Partial<CVAnalysis> {
-  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-  const phoneRegex = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
-
-  const emails = resumeText.match(emailRegex);
-  const phones = resumeText.match(phoneRegex);
-
-  const email = emails ? emails[0] : "candidate@tao.org";
-  const phone = phones ? phones[0] : "+1 (555) 019-2834";
-
-  let name = "Candidate User";
-  const lines = resumeText.split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length > 0 && lines[0].length < 50 && !lines[0].includes("@") && !lines[0].match(/^\d/)) {
-    name = lines[0];
-  } else if (email && email !== "candidate@tao.org") {
-    const parts = email.split("@")[0].split(/[._-]/);
-    name = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ");
   }
 
-  // Scan for skills mentioned in both resume and job description
-  const commonSkills = [
-    "React", "TypeScript", "JavaScript", "Next.js", "Node.js", "Python", "SQL",
-    "Supabase", "PostgreSQL", "HTML", "CSS", "Tailwind", "Git", "Docker", "AWS",
-    "Java", "C#", "Machine Learning", "AI", "Figma", "Adobe XD", "Nursing",
-    "Patient Care", "Medical", "Project Management", "Excel", "Word", "PowerPoint",
-  ];
-
-  const skills: string[] = [];
-  commonSkills.forEach((skill) => {
-    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`\\b${escaped}\\b`, "i");
-    if (regex.test(resumeText)) {
-      skills.push(skill);
-    }
-  });
-
-  if (skills.length === 0) {
-    skills.push("Communication", "Problem Solving");
-  }
-
-  // Score based on how many candidate skills match job description
-  let matchCount = 0;
-  skills.forEach((skill) => {
-    const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    if (new RegExp(`\\b${escaped}\\b`, "i").test(jobDescription)) {
-      matchCount++;
-    }
-  });
-
-  const jobFitScore = skills.length > 0 ? Math.min(80, Math.round((matchCount / skills.length) * 100)) : 30;
-
-  return {
-    full_name: name,
-    email,
-    phone,
-    location: "Location not specified",
-    skills,
-    education: [],
-    certifications: [],
-    work_experience: [],
-    professional_summary: `Candidate with skills in ${skills.slice(0, 4).join(", ")}. Note: Full AI analysis is currently unavailable.`,
-    strengths: [`Proficient in ${skills.slice(0, 2).join(" and ")}`],
-    weaknesses: ["Full AI analysis not available — manual review recommended."],
-    recommendations: "Manual review by recruiter recommended as AI analysis is currently offline.",
-    job_fit_score: jobFitScore,
-    raw_json: err ? { error: err.message, stack: err.stack } : {},
+  // Validate and sanitize the parsed result
+  const result: CVAnalysisResult = {
+    professional_summary: String(parsed.professional_summary ?? ""),
+    skills: Array.isArray(parsed.skills) ? parsed.skills.map(String) : [],
+    strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [],
+    risks: Array.isArray(parsed.risks) ? parsed.risks.map(String) : ["No significant concerns identified"],
+    years_of_experience: String(parsed.years_of_experience ?? ""),
+    work_experience: Array.isArray(parsed.work_experience)
+      ? parsed.work_experience.map((w: any) => ({
+          job_title: String(w.job_title ?? w.title ?? ""),
+          company: String(w.company ?? ""),
+          duration: String(w.duration ?? `${w.start_date ?? ""} – ${w.end_date ?? "Present"}`),
+          responsibilities: Array.isArray(w.responsibilities)
+            ? w.responsibilities.map(String)
+            : w.description
+            ? [String(w.description)]
+            : [],
+        }))
+      : [],
+    education: Array.isArray(parsed.education)
+      ? parsed.education.map((e: any) => ({
+          institution: String(e.institution ?? ""),
+          degree: String(e.degree ?? ""),
+          year: String(e.year ?? e.graduation_year ?? ""),
+        }))
+      : [],
+    certifications: Array.isArray(parsed.certifications) ? parsed.certifications.map(String) : [],
+    recommended_role_fit: String(parsed.recommended_role_fit ?? ""),
+    overall_score: Math.min(100, Math.max(0, Number(parsed.overall_score ?? parsed.job_fit_score ?? 0))),
   };
+
+  console.log(
+    `[AI:CV] Analysis complete. Score: ${result.overall_score} | Skills: ${result.skills.length} | Role fit: ${result.recommended_role_fit}`
+  );
+
+  return result;
 }
 
+// ── Interview Question Generation ────────────────────────────────
 /**
  * Generates the next screening interview question based on role requirements,
  * candidate CV summary, and interview chat history.
@@ -326,7 +333,7 @@ ${chatHistory.map((h, i) => `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.response}`
 Generate interview question #${questionIndex + 1}:`;
 
   const requestBody = JSON.stringify({
-    model: "meta/llama-3.1-8b-instruct",
+    model: "nvidia/llama-3.1-nemotron-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -334,7 +341,6 @@ Generate interview question #${questionIndex + 1}:`;
     temperature: 0.7,
     max_tokens: 512,
     stream: false,
-    chat_template_kwargs: { enable_thinking: false },
   });
 
   console.log("[AI] Generating interview question #" + (questionIndex + 1) + " for", candidateName);
@@ -416,6 +422,7 @@ function generateFallbackInterviewQuestion(
   return { question, isComplete: false, recommendedSeconds };
 }
 
+// ── Interview Evaluation ─────────────────────────────────────────
 /**
  * Generates a candidate evaluation by analyzing their CV analysis profile and screening transcript.
  */
@@ -470,7 +477,7 @@ Requirements: ${jobRequirements}
 Summary: ${cvAnalysis.professional_summary || ""}
 Skills: ${Array.isArray(cvAnalysis.skills) ? cvAnalysis.skills.join(", ") : ""}
 Strengths: ${Array.isArray(cvAnalysis.strengths) ? cvAnalysis.strengths.join(". ") : ""}
-Weaknesses: ${Array.isArray(cvAnalysis.weaknesses) ? cvAnalysis.weaknesses.join(". ") : ""}
+Risks: ${Array.isArray(cvAnalysis.risks) ? cvAnalysis.risks.join(". ") : (Array.isArray(cvAnalysis.weaknesses) ? cvAnalysis.weaknesses.join(". ") : "")}
 Experience: ${JSON.stringify(cvAnalysis.work_experience || [])}
 
 --- INTERVIEW DIALOG TRANSCRIPT ---
@@ -479,7 +486,7 @@ ${interviewResponses.map((r, i) => `Q${i + 1}: ${r.question}\nA${i + 1}: ${r.res
 Analyze the candidate's qualifications and interview performance to compute scores and summaries:`;
 
   const requestBody = JSON.stringify({
-    model: "meta/llama-3.1-8b-instruct",
+    model: "nvidia/llama-3.1-nemotron-70b-instruct",
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: userContent },
@@ -487,7 +494,6 @@ Analyze the candidate's qualifications and interview performance to compute scor
     temperature: 0.2,
     max_tokens: 1000,
     stream: false,
-    chat_template_kwargs: { enable_thinking: false },
   });
 
   console.log("[AI] Running candidate evaluation LLM call for job:", jobTitle);
@@ -512,7 +518,7 @@ Analyze the candidate's qualifications and interview performance to compute scor
     }
 
     const cleanContent = cleanJsonContent(content);
-    let parsed;
+    let parsed: any;
     try {
       parsed = JSON.parse(cleanContent);
     } catch (parseErr: any) {
@@ -550,8 +556,8 @@ function generateFallbackEvaluation(cvAnalysis: any = {}): {
   recruiter_summary: string;
   ai_rationale: string;
 } {
-  const jobFit = cvAnalysis.job_fit_score || 70;
-  const techScore = Math.min(100, Math.max(0, jobFit + Math.floor(Math.random() * 11) - 5)); // ±5
+  const jobFit = cvAnalysis.overall_score ?? cvAnalysis.job_fit_score ?? 70;
+  const techScore = Math.min(100, Math.max(0, jobFit + Math.floor(Math.random() * 11) - 5));
   const commScore = Math.floor(Math.random() * 16) + 80;
   const expScore = Math.min(100, Math.max(0, jobFit + Math.floor(Math.random() * 11) - 5));
   const probScore = Math.floor(Math.random() * 21) + 75;
@@ -566,8 +572,8 @@ function generateFallbackEvaluation(cvAnalysis: any = {}): {
     problem_solving_score: probScore,
     culture_fit_score: cultScore,
     overall_score: overall,
-    recommendation: recommendation,
+    recommendation,
     recruiter_summary: `Candidate's screening interview responses were successfully recorded and analyzed against their background profile.`,
-    ai_rationale: `Automated baseline screening score computed at ${overall}%. Resume parsing matches job profiles with custom communication values.`
+    ai_rationale: `Automated baseline screening score computed at ${overall}%. Resume parsing matches job profiles with custom communication values.`,
   };
 }

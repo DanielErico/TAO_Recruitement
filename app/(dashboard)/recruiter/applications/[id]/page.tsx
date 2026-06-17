@@ -42,7 +42,7 @@ export default async function RecruiterApplicationReviewPage({
 
   const supabase = createAdminClient();
 
-  // 1. Fetch application first (needed to check existence and get interview ID)
+  // 1. Fetch application with candidate + job details
   const { data: application } = await supabase
     .from("applications")
     .select(`
@@ -71,18 +71,38 @@ export default async function RecruiterApplicationReviewPage({
     notFound();
   }
 
-  // 2. Fetch CV analysis, interview, and evaluation in parallel
+  // 2. Fetch all analysis data, interview, and evaluation in parallel
   const [
+    { data: aiAnalysis },
     { data: cvAnalysis },
     { data: interview },
     { data: evaluation },
   ] = await Promise.all([
-    supabase.from("cv_analyses").select("*").eq("application_id", appId).maybeSingle(),
-    supabase.from("interviews").select("id, status").eq("application_id", appId).maybeSingle(),
-    supabase.from("evaluations").select("*").eq("application_id", appId).maybeSingle(),
+    // Primary: new candidate_ai_analysis table
+    supabase
+      .from("candidate_ai_analysis")
+      .select("*")
+      .eq("application_id", appId)
+      .maybeSingle(),
+    // Fallback: legacy cv_analyses table
+    supabase
+      .from("cv_analyses")
+      .select("*")
+      .eq("application_id", appId)
+      .maybeSingle(),
+    supabase
+      .from("interviews")
+      .select("id, status")
+      .eq("application_id", appId)
+      .maybeSingle(),
+    supabase
+      .from("evaluations")
+      .select("*")
+      .eq("application_id", appId)
+      .maybeSingle(),
   ]);
 
-  // 3. Fetch interview responses (depends on interview id from above)
+  // 3. Fetch interview responses
   let interviewResponses: any[] = [];
   if (interview) {
     const { data: responses } = await supabase
@@ -97,6 +117,7 @@ export default async function RecruiterApplicationReviewPage({
     <div className="max-w-6xl mx-auto py-2 animate-fade-in">
       <ApplicationReviewClient
         application={application as any}
+        aiAnalysis={aiAnalysis}
         cvAnalysis={cvAnalysis}
         interview={interview}
         interviewResponses={interviewResponses}

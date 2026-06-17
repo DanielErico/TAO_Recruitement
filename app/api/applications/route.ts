@@ -1,20 +1,34 @@
+/**
+ * TAO Recruit AI — POST /api/applications
+ * ============================================================
+ * Handles candidate job application submissions.
+ *
+ * Pipeline:
+ *   1. Authenticate candidate
+ *   2. Parse multipart form data
+ *   3. Upload CV to Supabase Storage
+ *   4. Extract CV text (PDF/DOCX/TXT via cv-extractor)
+ *   5. Call Nemotron 70B AI analysis (analyzeCV)
+ *   6. Insert application record
+ *   7. Insert candidate_ai_analysis record
+ *   8. Insert cv_analyses record (backward compat)
+ *   9. Return result
+ *
+ * Error handling:
+ *   - CV extraction failure  → application saved, analysis skipped, precise error stored
+ *   - AI analysis failure    → application saved, analysis skipped, precise error stored
+ *   - No fake/fallback data generated under any circumstances
+ * ============================================================
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
-import { analyzeResume } from "@/lib/ai";
-// Mock global browser classes to prevent pdf-parse from crashing during Next.js build module evaluation
-if (typeof global !== "undefined") {
-  if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class {};
-  if (!(global as any).ImageData) (global as any).ImageData = class {};
-  if (!(global as any).Path2D) (global as any).Path2D = class {};
-}
-
-
-
-
+import { analyzeCV } from "@/lib/ai";
+import { extractCVText } from "@/lib/cv-extractor";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // Allow up to 60s for AI resume analysis (requires Vercel Pro)
+export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   const cookieStore = await cookies();
@@ -31,8 +45,9 @@ export async function POST(request: NextRequest) {
 
   const supabase = createAdminClient();
 
-  // 1. Resolve real candidate UUID
+  // ── 1. Resolve real candidate UUID ───────────────────────────
   let candidateId = cookieUserId;
+
   const { data: byId } = await supabase
     .from("user_profiles")
     .select("id")
@@ -57,25 +72,28 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
 
       if (!anyCandidate) {
-        return NextResponse.json({ error: "No candidate profile found in database." }, { status: 400 });
+        return NextResponse.json(
+          { error: "No candidate profile found in database." },
+          { status: 400 }
+        );
       }
       candidateId = anyCandidate.id;
     }
   }
 
   try {
-    // 2. Parse Multipart Form Data
+    // ── 2. Parse form data ──────────────────────────────────────
     const formData = await request.formData();
     const jobId = formData.get("jobId") as string;
-    const coverLetter = formData.get("coverLetter") as string || "";
-    const portfolioUrl = formData.get("portfolioUrl") as string || "";
+    const coverLetter = (formData.get("coverLetter") as string) || "";
+    const portfolioUrl = (formData.get("portfolioUrl") as string) || "";
     const resumeFile = formData.get("resume") as File | null;
 
     if (!jobId) {
       return NextResponse.json({ error: "Missing jobId" }, { status: 400 });
     }
 
-    // Check for duplicate application
+    // ── Check for duplicate application ────────────────────────
     const { data: existing } = await supabase
       .from("applications")
       .select("id")
@@ -84,10 +102,13 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json({ error: "You have already applied for this position." }, { status: 409 });
+      return NextResponse.json(
+        { error: "You have already applied for this position." },
+        { status: 409 }
+      );
     }
 
-    // Fetch the job details for CV fit analysis
+    // ── Fetch job details ───────────────────────────────────────
     const { data: job } = await supabase
       .from("jobs")
       .select("title, description, requirements")
@@ -98,39 +119,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Job opening not found." }, { status: 404 });
     }
 
-    let resumeUrl = null;
-    let storagePath = null;
-    let resumeText = "";
-    let pdfExtractError: any = null;
+    // ── 3. Upload CV to Storage ─────────────────────────────────
+    let resumeUrl: string | null = null;
+    let storagePath: string | null = null;
+    let cvBuffer: Buffer | null = null;
+    let cvFileName = "";
+    let cvMimeType = "";
 
-    // 3. Upload CV to Storage
     if (resumeFile && resumeFile.size > 0) {
-      const fileExtension = resumeFile.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExtension}`;
-      storagePath = `${candidateId}/${fileName}`;
+      const fileExt = resumeFile.name.split(".").pop();
+      const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      storagePath = `${candidateId}/${uniqueName}`;
+      cvFileName = resumeFile.name;
+      cvMimeType = resumeFile.type;
 
       const arrayBuffer = await resumeFile.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      cvBuffer = Buffer.from(arrayBuffer);
 
       const { error: uploadError } = await supabase.storage
         .from("resumes")
-        .upload(storagePath, buffer, {
+        .upload(storagePath, cvBuffer, {
           contentType: resumeFile.type,
           upsert: true,
         });
 
       if (uploadError) {
-        console.error("Storage upload failed:", uploadError);
-        return NextResponse.json({ error: `Resume upload failed: ${uploadError.message}` }, { status: 400 });
+        console.error("[Applications] Storage upload failed:", uploadError);
+        return NextResponse.json(
+          { error: `CV upload failed: ${uploadError.message}` },
+          { status: 400 }
+        );
       }
 
-      // Get public URL
       const { data: urlData } = supabase.storage
         .from("resumes")
         .getPublicUrl(storagePath);
       resumeUrl = urlData?.publicUrl || null;
 
-      // Save document record
+      // Record document
       await supabase.from("candidate_documents").insert({
         candidate_id: candidateId,
         file_name: resumeFile.name,
@@ -138,72 +164,61 @@ export async function POST(request: NextRequest) {
         file_type: resumeFile.type,
         storage_path: storagePath,
       });
+    }
 
-      // 4. Extract PDF or plain text
-      try {
-        if (resumeFile.type === "application/pdf") {
-          // Mock global browser classes to prevent pdfjs-dist from crashing in Node.js
-          if (typeof global !== "undefined") {
-            if (!(global as any).DOMMatrix) (global as any).DOMMatrix = class {};
-            if (!(global as any).ImageData) (global as any).ImageData = class {};
-            if (!(global as any).Path2D) (global as any).Path2D = class {};
-          }
-          // Dynamically import pdfjs-dist legacy build (pure JS, no native canvas required)
-          const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-          // Use import.meta.resolve() to get the worker URL — require.resolve() is
-          // inlined as a numeric chunk ID by Turbopack/Webpack and breaks at runtime.
-          // import.meta.resolve() returns a proper file:// URL string in Node.js ESM.
-          try {
-            const workerUrl = await import.meta.resolve("pdfjs-dist/legacy/build/pdf.worker.mjs");
-            pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-          } catch {
-            // Fallback: if resolve fails, let pdfjs use its own default (./pdf.worker.mjs)
-          }
+    // ── 4. Extract CV text ──────────────────────────────────────
+    let extractedText = "";
+    let extractionStatus: "success" | "failed" | "empty" | "unsupported" | "pending" = "pending";
+    let extractionError: string | undefined;
 
-          const loadingTask = pdfjs.getDocument({
-            data: new Uint8Array(buffer),
-            useSystemFonts: true,
-            disableFontFace: true,
-          });
-          const doc = await loadingTask.promise;
-          let fullText = "";
-          for (let i = 1; i <= doc.numPages; i++) {
-            const page = await doc.getPage(i);
-            const content = await page.getTextContent();
-            const pageText = content.items.map((item: any) => item.str).join(" ");
-            fullText += pageText + "\n";
-          }
-          resumeText = fullText;
-        } else if (resumeFile.type === "text/plain" || resumeFile.type === "text/markdown") {
-          resumeText = buffer.toString("utf-8");
-        } else {
-          resumeText = `Uploaded resume: ${resumeFile.name}. Extraction is simulated for non-PDF files.`;
-        }
-      } catch (err: any) {
-        console.error("Failed to parse resume text:", err);
-        pdfExtractError = {
-          message: err.message,
-          stack: err.stack,
-          name: err.name
-        };
-        resumeText = `Fallback resume text for candidate. Resume file: ${resumeFile.name}`;
+    if (cvBuffer && cvFileName) {
+      const extraction = await extractCVText(cvBuffer, cvMimeType, cvFileName);
+      extractedText = extraction.text;
+      extractionStatus = extraction.status as typeof extractionStatus;
+      extractionError = extraction.error;
+
+      console.log(
+        `[Applications] Extraction: status=${extraction.status} chars=${extraction.charCount}`,
+        extraction.error ? `error=${extraction.error}` : ""
+      );
+    } else if (!resumeFile) {
+      // No CV uploaded — use cover letter as context if available
+      extractedText = coverLetter || "";
+      extractionStatus = extractedText.length > 50 ? "success" : "empty";
+      if (extractionStatus === "empty") {
+        extractionError = "No CV uploaded and no cover letter provided.";
       }
     }
 
-    if (!resumeText) {
-      resumeText = coverLetter || "No resume text or cover letter provided.";
+    // ── 5. AI CV Analysis ───────────────────────────────────────
+    let aiAnalysis: Awaited<ReturnType<typeof analyzeCV>> | null = null;
+    let aiError: string | undefined;
+    let applicationStatus = "screening"; // default
+
+    if (extractionStatus === "success" && extractedText) {
+      try {
+        aiAnalysis = await analyzeCV(
+          extractedText,
+          job.title,
+          job.description,
+          job.requirements
+        );
+
+        // High fit score → auto-invite to interview
+        applicationStatus = aiAnalysis.overall_score >= 75 ? "interview" : "screening";
+      } catch (err: any) {
+        console.error("[Applications] AI analysis failed:", err.message);
+        aiError = err.message;
+        // Application proceeds — analysis failure is non-blocking
+      }
+    } else {
+      console.warn(
+        `[Applications] Skipping AI analysis — extraction status: ${extractionStatus}`,
+        extractionError
+      );
     }
 
-    // 5. Run AI CV Analysis
-    const analysis = await analyzeResume(resumeText, job.title, job.description, job.requirements);
-    const fitScore = analysis.job_fit_score ?? 70;
-
-    // Determine status based on CV fit score
-    // If fit score is high (>= 75%), automatically invite to screening interview
-    // Otherwise place in recruiter screening queue
-    const applicationStatus = fitScore >= 75 ? "interview" : "screening";
-
-    // 6. Insert Application
+    // ── 6. Insert Application record ────────────────────────────
     const { data: application, error: appError } = await supabase
       .from("applications")
       .insert({
@@ -217,49 +232,99 @@ export async function POST(request: NextRequest) {
       .select()
       .single();
 
-    if (appError) {
-      throw appError;
-    }
+    if (appError) throw appError;
 
-    // 7. Save CV Analysis report
-    const { error: analysisError } = await supabase
-      .from("cv_analyses")
+    // ── 7. Insert candidate_ai_analysis (new table) ─────────────
+    const { error: newAnalysisError } = await supabase
+      .from("candidate_ai_analysis")
       .insert({
         application_id: application.id,
         candidate_id: candidateId,
         job_id: jobId,
-        full_name: analysis.full_name || null,
-        email: analysis.email || null,
-        phone: analysis.phone || null,
-        location: analysis.location || null,
-        skills: analysis.skills || [],
-        education: analysis.education || [],
-        certifications: analysis.certifications || [],
-        work_experience: analysis.work_experience || [],
-        professional_summary: analysis.professional_summary || "",
-        strengths: analysis.strengths || [],
-        weaknesses: analysis.weaknesses || [],
-        recommendations: analysis.recommendations || "",
-        job_fit_score: fitScore,
-        raw_json: {
-          ...analysis,
-          ...(pdfExtractError ? { pdf_extract_error: pdfExtractError } : {}),
-        },
+        extracted_text: extractedText,
+        extraction_status: extractionStatus,
+        extraction_error: extractionError ?? null,
+        professional_summary: aiAnalysis?.professional_summary ?? "",
+        skills: aiAnalysis?.skills ?? [],
+        strengths: aiAnalysis?.strengths ?? [],
+        risks: aiAnalysis?.risks ?? [],
+        years_of_experience: aiAnalysis?.years_of_experience ?? "",
+        work_experience: aiAnalysis?.work_experience ?? [],
+        education: aiAnalysis?.education ?? [],
+        certifications: aiAnalysis?.certifications ?? [],
+        recommended_role_fit: aiAnalysis?.recommended_role_fit ?? "",
+        overall_score: aiAnalysis?.overall_score ?? 0,
+        ai_model: "nvidia/llama-3.1-nemotron-70b-instruct",
+        analyzed_at: aiAnalysis ? new Date().toISOString() : null,
       });
 
-    if (analysisError) {
-      console.error("Warning: Failed to save CV analysis:", analysisError);
+    if (newAnalysisError) {
+      console.error("[Applications] Failed to save candidate_ai_analysis:", newAnalysisError);
     }
 
+    // ── 8. Insert cv_analyses (backward compatibility) ──────────
+    if (aiAnalysis) {
+      const { error: legacyError } = await supabase
+        .from("cv_analyses")
+        .insert({
+          application_id: application.id,
+          candidate_id: candidateId,
+          job_id: jobId,
+          full_name: null,
+          email: null,
+          phone: null,
+          location: null,
+          skills: aiAnalysis.skills,
+          education: aiAnalysis.education.map((e) => ({
+            institution: e.institution,
+            degree: e.degree,
+            field: "",
+            graduation_year: e.year,
+          })),
+          certifications: aiAnalysis.certifications,
+          work_experience: aiAnalysis.work_experience.map((w) => ({
+            company: w.company,
+            title: w.job_title,
+            start_date: "",
+            end_date: "",
+            current: false,
+            description: w.responsibilities.join(" "),
+          })),
+          professional_summary: aiAnalysis.professional_summary,
+          strengths: aiAnalysis.strengths,
+          weaknesses: aiAnalysis.risks,
+          recommendations: `Role fit: ${aiAnalysis.recommended_role_fit}`,
+          job_fit_score: aiAnalysis.overall_score,
+          raw_json: {
+            source: "candidate_ai_analysis",
+            overall_score: aiAnalysis.overall_score,
+            recommended_role_fit: aiAnalysis.recommended_role_fit,
+            years_of_experience: aiAnalysis.years_of_experience,
+            ...(aiError ? { ai_error: aiError } : {}),
+          },
+        });
+
+      if (legacyError) {
+        console.warn("[Applications] Failed to save legacy cv_analyses:", legacyError.message);
+      }
+    }
+
+    // ── 9. Return result ────────────────────────────────────────
     return NextResponse.json({
       success: true,
       application,
       realUserId: candidateId,
       status: applicationStatus,
-      fitScore,
+      fitScore: aiAnalysis?.overall_score ?? 0,
+      extractionStatus,
+      ...(extractionError ? { extractionError } : {}),
+      ...(aiError ? { aiError } : {}),
     });
   } catch (err: any) {
-    console.error("Application submission failed:", err);
-    return NextResponse.json({ error: err.message || "Failed to process application" }, { status: 500 });
+    console.error("[Applications] Submission failed:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to process application" },
+      { status: 500 }
+    );
   }
 }
