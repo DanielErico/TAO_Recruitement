@@ -30,6 +30,7 @@ export default function ApplyPage({
 
   const [profileResumeName, setProfileResumeName] = useState<string | null>(null);
   const [profileResumeUrl, setProfileResumeUrl] = useState<string | null>(null);
+  const [submittingStep, setSubmittingStep] = useState<"idle" | "uploading" | "parsing" | "analyzing" | "finalizing">("idle");
 
   // Check auth status and fetch profile details
   useEffect(() => {
@@ -70,28 +71,117 @@ export default function ApplyPage({
         formData.append("resume", resumeFile);
       }
 
-      const res = await fetch("/api/applications", {
-        method: "POST",
-        body: formData,
-      });
+      setSubmittingStep("uploading");
+      
+      const stepTimer1 = setTimeout(() => {
+        setSubmittingStep("parsing");
+      }, 1500);
+      
+      const stepTimer2 = setTimeout(() => {
+        setSubmittingStep("analyzing");
+      }, 3500);
 
-      const json = await res.json().catch(() => ({}));
+      try {
+        const res = await fetch("/api/applications", {
+          method: "POST",
+          body: formData,
+        });
 
-      if (!res.ok) {
-        setError(json.error || `Submission failed (${res.status})`);
-        return;
+        clearTimeout(stepTimer1);
+        clearTimeout(stepTimer2);
+
+        const json = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          setSubmittingStep("idle");
+          setError(json.error || `Submission failed (${res.status})`);
+          return;
+        }
+
+        setSubmittingStep("finalizing");
+        await new Promise((resolve) => setTimeout(resolve, 800));
+
+        // Sync real UUID back to cookie if it was a demo UUID
+        if (json.realUserId) {
+          document.cookie = `mock_user_id=${json.realUserId}; path=/; max-age=604800; SameSite=Lax`;
+        }
+
+        if (json.status) setAppStatus(json.status);
+        if (json.fitScore) setFitScore(json.fitScore);
+        setSuccess(true);
+        setSubmittingStep("idle");
+      } catch (err: any) {
+        clearTimeout(stepTimer1);
+        clearTimeout(stepTimer2);
+        setSubmittingStep("idle");
+        setError(err.message || "Failed to submit application");
       }
-
-      // Sync real UUID back to cookie if it was a demo UUID
-      if (json.realUserId) {
-        document.cookie = `mock_user_id=${json.realUserId}; path=/; max-age=604800; SameSite=Lax`;
-      }
-
-      if (json.status) setAppStatus(json.status);
-      if (json.fitScore) setFitScore(json.fitScore);
-      setSuccess(true);
     });
   }
+
+  const renderProgressOverlay = () => {
+    if (submittingStep === "idle") return null;
+
+    const steps = [
+      { id: "uploading", label: "Uploading resume & application details" },
+      { id: "parsing", label: "Parsing & extracting text from resume" },
+      { id: "analyzing", label: "AI is analyzing resume match & fit score" },
+      { id: "finalizing", label: "Finalizing application setup" },
+    ];
+
+    const currentStepIndex = steps.findIndex((s) => s.id === submittingStep);
+
+    return (
+      <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full border border-[var(--color-border)] rounded-xl shadow-xl bg-white p-6 space-y-6">
+          <div className="text-center space-y-2">
+            <h3 className="text-lg font-bold text-[var(--color-foreground)]">Processing Application</h3>
+            <p className="text-xs text-[var(--color-muted-foreground)]">
+              This will take a few seconds while our AI models evaluate your resume.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            {steps.map((step, idx) => {
+              const isCompleted = idx < currentStepIndex;
+              const isActive = idx === currentStepIndex;
+              return (
+                <div key={step.id} className="flex items-center gap-3">
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 transition-all duration-300 ${
+                    isCompleted 
+                      ? "bg-[var(--color-brand)] text-white border border-[var(--color-brand)]" 
+                      : isActive 
+                      ? "bg-[var(--color-brand-light)] text-[var(--color-brand)] border border-[var(--color-brand)]" 
+                      : "bg-slate-100 text-slate-400 border border-slate-200"
+                  }`}>
+                    {isCompleted ? "✓" : idx + 1}
+                  </div>
+                  <span className={`text-sm transition-all duration-300 ${
+                    isCompleted 
+                      ? "text-[var(--color-muted-foreground)] line-through" 
+                      : isActive 
+                      ? "text-[var(--color-foreground)] font-semibold animate-pulse" 
+                      : "text-slate-400"
+                  }`}>
+                    {step.label}
+                  </span>
+                  {isActive && <Loader2 size={14} className="animate-spin text-[var(--color-brand)] ml-auto" />}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Simple progress bar */}
+          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-[var(--color-brand)] transition-all duration-500 rounded-full"
+              style={{ width: `${((currentStepIndex + 1) / steps.length) * 100}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Success screen
   if (success) {
@@ -168,6 +258,7 @@ export default function ApplyPage({
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] pb-12">
+      {renderProgressOverlay()}
       {/* Header */}
       <header className="border-b border-[var(--color-border)] bg-white sticky top-0 z-30">
         <div className="max-w-3xl mx-auto px-6 h-16 flex items-center justify-between">

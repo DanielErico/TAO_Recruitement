@@ -232,7 +232,7 @@ export async function POST(request: NextRequest) {
           job.title,
           job.description,
           job.requirements,
-          8000 // 8 seconds timeout limit to prevent gateway 504
+          35000 // 35 seconds timeout limit to ensure auto-evaluation completes successfully
         );
 
         // High fit score → auto-invite to interview
