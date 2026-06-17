@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { applicationId, candidateId, answers = [], startTime } = body;
+    const { applicationId, candidateId, answers = [], startTime, switchedTabs = false } = body;
 
     if (!applicationId || !candidateId) {
       return NextResponse.json({ error: "Missing applicationId or candidateId" }, { status: 400 });
@@ -87,17 +87,27 @@ export async function POST(request: NextRequest) {
       .delete()
       .eq("interview_id", interview.id);
 
-    const responsesToInsert = answers.length > 0
-      ? answers.map((ans: any) => ({
-          interview_id: interview.id,
-          question_text: ans.question,
-          response_text: ans.response
-        }))
-      : [{
-          interview_id: interview.id,
-          question_text: "System Information",
-          response_text: "The candidate's interview session timed out before any answers could be successfully recorded."
-        }];
+    const responsesToInsert = answers.map((ans: any) => ({
+      interview_id: interview.id,
+      question_text: ans.question,
+      response_text: ans.response
+    }));
+
+    if (switchedTabs) {
+      responsesToInsert.push({
+        interview_id: interview.id,
+        question_text: "System Integrity Alert",
+        response_text: "[ALERT] Candidate switched tabs/windows during the active interview session. The interview was automatically terminated and submitted."
+      });
+    }
+
+    if (responsesToInsert.length === 0) {
+      responsesToInsert.push({
+        interview_id: interview.id,
+        question_text: "System Information",
+        response_text: "The candidate's interview session timed out before any answers could be successfully recorded."
+      });
+    }
 
     const { error: respError } = await supabase
       .from("interview_responses")
@@ -150,6 +160,14 @@ export async function POST(request: NextRequest) {
       };
     }
 
+    let recruiterSummary = evaluation.recruiter_summary;
+    let aiRationale = evaluation.ai_rationale;
+
+    if (switchedTabs) {
+      recruiterSummary = `⚠️ INTEGRITY WARNING: Tab switching detected. The interview was automatically terminated and flagged.\n\n${recruiterSummary}`;
+      aiRationale = `FLAGGED EVENT: Candidate attempted to switch browser tabs or windows during this interview. Session was closed automatically.\n\n${aiRationale}`;
+    }
+
     const { error: evalError } = await supabase
       .from("evaluations")
       .upsert(
@@ -164,8 +182,8 @@ export async function POST(request: NextRequest) {
           culture_fit_score: evaluation.culture_fit_score,
           overall_score: evaluation.overall_score,
           recommendation: evaluation.recommendation,
-          recruiter_summary: evaluation.recruiter_summary,
-          ai_rationale: evaluation.ai_rationale
+          recruiter_summary: recruiterSummary,
+          ai_rationale: aiRationale
         },
         { onConflict: "application_id" }
       );

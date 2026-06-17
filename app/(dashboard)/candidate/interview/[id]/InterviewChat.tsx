@@ -47,6 +47,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const isAiTypingRef = useRef(isAiTyping);
   const answersRef = useRef(answers);
   const currentInputRef = useRef(currentInput);
+  const messagesRef = useRef(messages);
+  const isSubmittingRef = useRef(false);
 
   useEffect(() => {
     isListeningRef.current = isListening;
@@ -57,7 +59,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   useEffect(() => {
     answersRef.current = answers;
     currentInputRef.current = currentInput;
-  }, [answers, currentInput]);
+    messagesRef.current = messages;
+  }, [answers, currentInput, messages]);
 
   // Global Timer countdown hook
   useEffect(() => {
@@ -97,6 +100,49 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
 
     submitInterview(finalAnswers);
   }
+
+  // Handle tab switch detection (anti-cheat)
+  const handleTabSwitch = () => {
+    if (document.visibilityState === "hidden") {
+      console.warn("[Anti-Cheat] Tab switch detected! Force submitting interview.");
+      stopListening();
+      
+      // Capture current input text (if any) as a final answer
+      const finalSpeech = currentInputRef.current.trim();
+      let finalAnswers = [...answersRef.current];
+      
+      if (finalSpeech) {
+        const aiMessages = messagesRef.current.filter((m) => m.sender === "ai");
+        const currentQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].text : "Introduction";
+        finalAnswers.push({ question: currentQuestion, response: finalSpeech });
+      }
+      
+      if (finalAnswers.length === 0) {
+        finalAnswers.push({ 
+          question: "Introduction", 
+          response: "(No responses recorded before tab switch)" 
+        });
+      }
+
+      // Add a final response note to answers indicating termination due to tab switch
+      finalAnswers.push({
+        question: "System Status Alert",
+        response: "[INTERVIEW TERMINATED] The candidate switched tabs during this question. The interview was forced to end and submit."
+      });
+
+      submitInterview(finalAnswers, true);
+    }
+  };
+
+  // Anti-cheat tab-switching listener hook
+  useEffect(() => {
+    if (mode !== "chat") return;
+
+    document.addEventListener("visibilitychange", handleTabSwitch);
+    return () => {
+      document.removeEventListener("visibilitychange", handleTabSwitch);
+    };
+  }, [mode]);
 
   // Auto scroll chat
   useEffect(() => {
@@ -345,7 +391,10 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     };
   }
 
-  function submitInterview(finalAnswers: typeof answers) {
+  function submitInterview(finalAnswers: typeof answers, switchedTabs = false) {
+    if (isSubmittingRef.current) return;
+    isSubmittingRef.current = true;
+    setMode("submitting");
     startTransition(async () => {
       try {
         setError(null);
@@ -358,7 +407,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             applicationId,
             candidateId,
             answers: finalAnswers,
-            startTime: start.toISOString()
+            startTime: start.toISOString(),
+            switchedTabs
           })
         });
 
@@ -370,6 +420,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
         setMode("success");
       } catch (err: any) {
         console.error("Failed to submit interview:", err);
+        isSubmittingRef.current = false;
         setError(err.message || "Something went wrong submitting your responses.");
         setMode("chat"); // Return to chat mode to show error
         setQuestionIndex(5);
@@ -424,6 +475,14 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
               <div>
                 <strong className="block">Auto-Submission & Finalization</strong>
                 <span className="text-[var(--color-muted-foreground)]">When the 5-minute limit expires, all your answers gathered so far will be automatically finalized and submitted to the recruiter.</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 items-start border-l-2 border-rose-500 pl-3 bg-rose-50/40 p-2.5 rounded-lg">
+              <AlertCircle size={16} className="text-rose-600 mt-0.5 shrink-0" />
+              <div>
+                <strong className="block text-rose-700 text-xs">Tab Switching Prohibited</strong>
+                <span className="text-[var(--color-muted-foreground)] text-xs">To ensure integrity, tab or window switching is strictly tracked. If you switch tabs, the interview will end and submit automatically, logging a tab-switching warning.</span>
               </div>
             </div>
           </div>
