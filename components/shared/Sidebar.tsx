@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Image from "next/image";
@@ -61,6 +61,56 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
   const router = useRouter();
   const supabase = createClient();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [pendingInterviewsCount, setPendingInterviewsCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (role !== "candidate") return;
+
+    const getCookie = (name: string) => {
+      const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
+      return match ? match[2] : null;
+    };
+    const userId = getCookie("mock_user_id");
+    if (!userId) return;
+
+    const fetchPendingInterviews = async () => {
+      try {
+        const { count, error } = await supabase
+          .from("applications")
+          .select("id", { count: "exact", head: true })
+          .eq("candidate_id", userId)
+          .eq("status", "interview");
+        
+        if (!error && count !== null) {
+          setPendingInterviewsCount(count);
+        }
+      } catch (err) {
+        console.error("Failed to fetch pending interviews count:", err);
+      }
+    };
+
+    fetchPendingInterviews();
+
+    // Set up real-time subscription to auto-update when application status changes
+    const channel = supabase
+      .channel("sidebar-applications-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "applications",
+        },
+        () => {
+          fetchPendingInterviews();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [role, supabase]);
 
   const filteredItems = NAV_ITEMS.filter((item) => item.roles.includes(role));
 
@@ -99,15 +149,24 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
               ? pathname === item.href
               : pathname.startsWith(item.href);
 
+          const showDot = item.href === "/candidate/interviews" && pendingInterviewsCount > 0;
+
           return (
             <Link
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={cn("nav-link", isActive && "active")}
+              className={cn("nav-link flex items-center justify-between", isActive && "active")}
             >
-              <Icon size={16} strokeWidth={1.75} />
-              {item.label}
+              <span className="flex items-center gap-2.5">
+                <Icon size={16} strokeWidth={1.75} />
+                {item.label}
+              </span>
+              {showDot && (
+                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold leading-none text-white bg-red-600 rounded-full min-w-5 h-5 ml-auto animate-pulse">
+                  {pendingInterviewsCount}
+                </span>
+              )}
             </Link>
           );
         })}
