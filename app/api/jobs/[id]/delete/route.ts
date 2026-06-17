@@ -14,8 +14,10 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const adminDb = createAdminClient();
+
   // Check admin or recruiter role
-  const { data: profile } = await supabase
+  const { data: profile } = await adminDb
     .from("user_profiles")
     .select("role")
     .eq("id", user.id)
@@ -25,7 +27,6 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const adminDb = createAdminClient();
   const { error } = await adminDb.from("jobs").delete().eq("id", id);
 
   if (error) {
