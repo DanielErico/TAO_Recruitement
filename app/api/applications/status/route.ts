@@ -61,9 +61,9 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    // ── Send email notifications asynchronously based on new status ──
+    // ── Send email notifications based on new status ──
     if (data) {
-      (async () => {
+      try {
         const { data: job } = await supabase
           .from("jobs")
           .select("title")
@@ -89,7 +89,9 @@ export async function POST(request: NextRequest) {
             await EmailService.sendRejection(candidateEmail, candidateName, jobTitle);
           }
         }
-      })().catch(err => console.error("[Status API] Asynchronous email flow failed:", err.message));
+      } catch (err: any) {
+        console.error("[Status API] Email notification flow failed:", err.message);
+      }
     }
 
     return NextResponse.json({ success: true, application: data });

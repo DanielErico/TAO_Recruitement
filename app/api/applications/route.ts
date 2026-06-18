@@ -351,16 +351,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── 8.5. Send email notifications asynchronously ────────────
+    // ── 8.5. Send email notifications ───────────────────────────
     if (candidateEmail) {
-      // 1. Send Application Received confirmation
-      EmailService.sendApplicationReceived(candidateEmail, candidateName, job.title)
-        .catch(err => console.error("[Applications] Received email failed:", err.message));
+      try {
+        // 1. Send Application Received confirmation
+        await EmailService.sendApplicationReceived(candidateEmail, candidateName, job.title);
 
-      // 2. If status is 'interview' (due to auto-qualification fitScore >= 75), send invite
-      if (applicationStatus === "interview") {
-        EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id)
-          .catch(err => console.error("[Applications] Auto-interview invite email failed:", err.message));
+        // 2. If status is 'interview' (due to auto-qualification fitScore >= 75), send invite
+        if (applicationStatus === "interview") {
+          await EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id);
+        }
+      } catch (err: any) {
+        console.error("[Applications] Email notifications failed:", err.message);
       }
     }
 
