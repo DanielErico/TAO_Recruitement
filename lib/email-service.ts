@@ -57,6 +57,14 @@ export class EmailService {
     }
 
     try {
+      if (defaultFrom === "onboarding@resend.dev") {
+        console.warn(
+          `[EmailService] WARNING: Sending email to ${to} using default 'onboarding@resend.dev'. ` +
+          `This will only succeed if the recipient matches your registered Resend account owner email. ` +
+          `To send to others, configure RESEND_FROM_EMAIL with your verified domain.`
+        );
+      }
+
       const { data, error } = await resend.emails.send({
         from: `TAO Recruit AI <${defaultFrom}>`,
         to,
