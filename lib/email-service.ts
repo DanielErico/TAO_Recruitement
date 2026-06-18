@@ -15,7 +15,8 @@ import {
   getApplicationReceivedHtml, 
   getInterviewInviteHtml, 
   getShortlistHtml, 
-  getRejectionHtml 
+  getRejectionHtml,
+  getOfferExtendedHtml
 } from "./emails";
 
 const apiKey = process.env.RESEND_API_KEY;
@@ -116,6 +117,14 @@ export class EmailService {
   public static async sendRejection(to: string, candidateName: string, jobTitle: string): Promise<boolean> {
     const html = getRejectionHtml({ candidateName, jobTitle });
     return this.sendEmail(to, `Update on your application — ${jobTitle}`, html);
+  }
+
+  /**
+   * 5. Offer Extended Email
+   */
+  public static async sendOfferExtended(to: string, candidateName: string, jobTitle: string): Promise<boolean> {
+    const html = getOfferExtendedHtml({ candidateName, jobTitle });
+    return this.sendEmail(to, `Job Offer Extended — ${jobTitle}`, html);
   }
 }
 export default EmailService;

@@ -130,3 +130,18 @@ export function getRejectionHtml({ candidateName, jobTitle }: TemplateData): str
   `;
   return wrapTemplate(`Update on your Application`, body);
 }
+
+/**
+ * 5. Offer Extended Template
+ */
+export function getOfferExtendedHtml({ candidateName, jobTitle }: TemplateData): string {
+  const body = `
+    Dear ${candidateName},<br/><br/>
+    Congratulations! We are absolutely thrilled to offer you the position of <strong>${jobTitle}</strong> at TAO.<br/><br/>
+    Our hiring team was incredibly impressed by your background, credentials, and performance during the AI voice screening interview. We believe your skills and passion will be a fantastic addition to our agricultural operations.<br/><br/>
+    Our HR representative will contact you shortly with the formal offer letter and details regarding compensation, benefits, and start dates.<br/><br/>
+    Welcome aboard!
+  `;
+  return wrapTemplate(`Job Offer Extended`, body);
+}
+

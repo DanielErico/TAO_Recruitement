@@ -87,6 +87,8 @@ export async function POST(request: NextRequest) {
             await EmailService.sendShortlisted(candidateEmail, candidateName, jobTitle);
           } else if (status === "rejected") {
             await EmailService.sendRejection(candidateEmail, candidateName, jobTitle);
+          } else if (status === "offered") {
+            await EmailService.sendOfferExtended(candidateEmail, candidateName, jobTitle);
           }
         }
       } catch (err: any) {
