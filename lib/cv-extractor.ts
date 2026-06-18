@@ -86,7 +86,10 @@ async function extractPDF(buffer: Buffer, fileName: string): Promise<CVExtractio
     // pdf-parse@1.1.1's index.js runs debug test code that tries to open
     // './test/data/05-versions-space.pdf' — a path that doesn't exist on Vercel.
     // Importing the core implementation directly bypasses this broken entry point.
-    const pdfParse = (await import("pdf-parse/lib/pdf-parse")).default;
+    const pdfParseModule = await import("pdf-parse/lib/pdf-parse");
+    const pdfParse = (typeof pdfParseModule === "function"
+      ? pdfParseModule
+      : (pdfParseModule.default || pdfParseModule)) as any;
 
     const data = await pdfParse(buffer, {
       // max: 0 means extract ALL pages (no page limit)

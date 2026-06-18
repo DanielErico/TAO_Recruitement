@@ -26,6 +26,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { analyzeCV } from "@/lib/ai";
 import { extractCVText } from "@/lib/cv-extractor";
+import { EmailService } from "@/lib/email-service";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -80,6 +81,16 @@ export async function POST(request: NextRequest) {
       candidateId = anyCandidate.id;
     }
   }
+
+  // ── Resolve candidate profile details for notifications ─────
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("full_name, email")
+    .eq("id", candidateId)
+    .maybeSingle();
+
+  const candidateName = profile?.full_name || "Candidate";
+  const candidateEmail = profile?.email || cookieEmail;
 
   try {
     // ── 2. Parse form data ──────────────────────────────────────
@@ -337,6 +348,19 @@ export async function POST(request: NextRequest) {
 
       if (legacyError) {
         console.warn("[Applications] Failed to save legacy cv_analyses:", legacyError.message);
+      }
+    }
+
+    // ── 8.5. Send email notifications asynchronously ────────────
+    if (candidateEmail) {
+      // 1. Send Application Received confirmation
+      EmailService.sendApplicationReceived(candidateEmail, candidateName, job.title)
+        .catch(err => console.error("[Applications] Received email failed:", err.message));
+
+      // 2. If status is 'interview' (due to auto-qualification fitScore >= 75), send invite
+      if (applicationStatus === "interview") {
+        EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id)
+          .catch(err => console.error("[Applications] Auto-interview invite email failed:", err.message));
       }
     }
 
