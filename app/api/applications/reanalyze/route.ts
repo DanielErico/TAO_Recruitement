@@ -11,8 +11,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import { analyzeCV } from "@/lib/ai";
 import { extractCVText } from "@/lib/cv-extractor";
 
@@ -21,12 +20,14 @@ export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   // ── Auth check — recruiter/admin only ────────────────────────
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!role) {
+  if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  const role = user.user_metadata?.role;
   if (!["recruiter", "admin"].includes(role)) {
     return NextResponse.json({ error: "Only recruiters can trigger re-analysis." }, { status: 403 });
   }
@@ -36,8 +37,6 @@ export async function POST(request: NextRequest) {
   if (!applicationId) {
     return NextResponse.json({ error: "Missing applicationId" }, { status: 400 });
   }
-
-  const supabase = createAdminClient();
 
   // ── Fetch application + job details ─────────────────────────
   const { data: application } = await supabase

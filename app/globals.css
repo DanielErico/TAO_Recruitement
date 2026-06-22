@@ -63,6 +63,7 @@
 
   /* ── Animations ── */
   --animate-fade-in: fade-in 0.18s ease-out;
+  --animate-pulse: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 
   @keyframes fade-in {
     from {
@@ -73,6 +74,11 @@
       opacity: 1;
       transform: translateY(0);
     }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
   }
 }
 

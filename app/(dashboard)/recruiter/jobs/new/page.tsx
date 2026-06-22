@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { JobForm } from "@/components/jobs/JobForm";
 import type { Metadata } from "next";
 import type { Department } from "@/types";
@@ -9,15 +8,16 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Post a Job" };
 
 export default async function NewJobPage() {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  if (!user) redirect("/login");
 
-  if (!role || !userId) redirect("/login");
+  const role = user.user_metadata?.role;
+  const userId = user.id;
+
+  if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   // Fetch departments — these are public reference data, safe to query
   let departments: Department[] = [];

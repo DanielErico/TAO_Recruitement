@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Briefcase } from "lucide-react";
 import { JobsTable } from "@/components/jobs/JobsTable";
@@ -16,12 +15,13 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string; dept?: string }>;
 }) {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   const params = await searchParams;
   const q = params.q ?? "";
@@ -33,7 +33,8 @@ export default async function JobsPage({
     .from("jobs")
     .select(`
       *,
-      department:departments(name)
+      department:departments(name),
+      applications(count)
     `)
     .order("created_at", { ascending: false });
 

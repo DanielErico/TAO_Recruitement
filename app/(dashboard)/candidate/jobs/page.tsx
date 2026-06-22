@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MapPin, Briefcase, Clock, Search, Filter } from "lucide-react";
@@ -23,16 +22,16 @@ export default async function CandidateJobsPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // 1. Auth check via cookies (no DB round-trip)
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const userId = user.id;
 
   if (!role || !userId) redirect("/login");
   if (role !== "candidate") redirect("/recruiter");
-
-  const supabase = createAdminClient();
 
   // 2. Fetch live published jobs
   let jobsQuery = supabase

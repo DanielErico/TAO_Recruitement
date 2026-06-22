@@ -1,6 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { InterviewChat } from "./InterviewChat";
 import type { Metadata } from "next";
 
@@ -13,15 +12,17 @@ export default async function CandidateInterviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: appId } = await params;
-  const cookieStore = await cookies();
 
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const userId = user.id;
 
   if (!role || !userId) redirect("/login");
   if (role !== "candidate") redirect("/recruiter");
-
-  const supabase = createAdminClient();
 
   console.log(`[InterviewPage] appId: ${appId}, userId: ${userId}, role: ${role}`);
 

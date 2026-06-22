@@ -40,6 +40,8 @@ export default function ApplyPage({
     };
     const role = getCookie("user_role");
     const isCandidateUser = role === "candidate";
+    
+    // eslint-disable-next-line
     setIsCandidate(isCandidateUser);
 
     if (isCandidateUser) {

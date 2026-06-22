@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import { EmailService } from "@/lib/email-service";
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (!role || !["recruiter", "admin"].includes(role)) {
+  if (!user || !["recruiter", "admin"].includes(user?.user_metadata?.role)) {
     return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
   }
 
@@ -18,8 +17,6 @@ export async function POST(request: NextRequest) {
     if (!applicationId || !status) {
       return NextResponse.json({ error: "Missing applicationId or status" }, { status: 400 });
     }
-
-    const supabase = createAdminClient();
 
     // If status is moved to 'interview', check if interview record exists
     if (status === "interview") {

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatDate, getStatusConfig } from "@/lib/utils";
 import { FileText, Clock, ExternalLink } from "lucide-react";
@@ -11,15 +10,16 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "My Applications" };
 
 export default async function CandidateApplicationsPage() {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const userId = user.id;
 
   if (!role || !userId) redirect("/login");
   if (role !== "candidate") redirect("/recruiter");
-
-  const supabase = createAdminClient();
 
   const { data: rawApplications } = await supabase
     .from("applications")

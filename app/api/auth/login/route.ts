@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -22,11 +23,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
     }
 
-    const supabase = createAdminClient();
+    const supabase = await createClient();
 
     // ── 1. Authenticate with Supabase Auth ──────────────────────
-    // Use admin client to call signInWithPassword so we can verify the password
-    // server-side without exposing the service role key to the browser.
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password,
@@ -88,9 +87,9 @@ export async function POST(request: NextRequest) {
       // Set session cookies
       const cookieStore = await cookies();
       cookieStore.set("user_role", "candidate", { maxAge: 604800, path: "/" });
-      cookieStore.set("mock_user_id", userId, { maxAge: 604800, path: "/" });
-      cookieStore.set("mock_user_email", email.trim().toLowerCase(), { maxAge: 604800, path: "/" });
-      cookieStore.set("mock_user_name", fallbackName, { maxAge: 604800, path: "/" });
+      cookieStore.delete("mock_user_id");
+      cookieStore.delete("mock_user_email");
+      cookieStore.delete("mock_user_name");
 
       return NextResponse.json({
         role: "candidate",
@@ -103,9 +102,9 @@ export async function POST(request: NextRequest) {
     // ── 3. Set session cookies ───────────────────────────────────
     const cookieStore = await cookies();
     cookieStore.set("user_role", profile.role, { maxAge: 604800, path: "/" });
-    cookieStore.set("mock_user_id", profile.id, { maxAge: 604800, path: "/" });
-    cookieStore.set("mock_user_email", profile.email || email, { maxAge: 604800, path: "/" });
-    cookieStore.set("mock_user_name", profile.full_name || "", { maxAge: 604800, path: "/" });
+    cookieStore.delete("mock_user_id");
+    cookieStore.delete("mock_user_email");
+    cookieStore.delete("mock_user_name");
 
     return NextResponse.json({
       role: profile.role,

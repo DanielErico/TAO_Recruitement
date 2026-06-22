@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate } from "@/lib/utils";
 import { Users, Mail, FileText, Calendar } from "lucide-react";
@@ -11,12 +10,13 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Candidates" };
 
 export default async function RecruiterCandidatesPage() {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   // 1. Fetch all candidate user profiles
   const { data: candidates = [] } = await supabase

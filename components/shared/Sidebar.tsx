@@ -21,6 +21,7 @@ import {
   Menu,
   X,
   User,
+  BarChart2,
 } from "lucide-react";
 import type { UserRole } from "@/types";
 
@@ -41,6 +42,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Jobs", href: "/recruiter/jobs", icon: Briefcase, roles: ["recruiter", "admin"] },
   { label: "Candidates", href: "/recruiter/candidates", icon: Users, roles: ["recruiter", "admin"] },
   { label: "Pipeline", href: "/recruiter/pipeline", icon: ChevronRight, roles: ["recruiter", "admin"] },
+  { label: "Analytics", href: "/recruiter/analytics", icon: BarChart2, roles: ["recruiter", "admin"] },
 
   // Candidate
   { label: "Dashboard", href: "/candidate", icon: LayoutDashboard, roles: ["candidate"] },
@@ -130,7 +132,7 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
     .join("")
     .toUpperCase();
 
-  const SidebarContent = () => (
+  const renderSidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="px-4 py-4 border-b border-[var(--color-border)]">
@@ -209,7 +211,7 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
     <>
       {/* Desktop sidebar */}
       <aside className="hidden lg:flex flex-col w-56 border-r border-[var(--color-border)] bg-white shrink-0 fixed top-0 bottom-0 left-0 z-30">
-        <SidebarContent />
+        {renderSidebarContent()}
       </aside>
 
       {/* Mobile top bar */}
@@ -233,7 +235,7 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
           />
           <aside className="absolute top-0 left-0 bottom-0 w-64 bg-white shadow-xl">
             <div className="pt-14">
-              <SidebarContent />
+              {renderSidebarContent()}
             </div>
           </aside>
         </div>

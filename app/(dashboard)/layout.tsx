@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { Sidebar } from "@/components/shared/Sidebar";
 import type { UserRole } from "@/types";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -10,17 +11,26 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  // Read user data directly from cookies set at login — no DB round-trip needed
-  const role = cookieStore.get("user_role")?.value as UserRole | undefined;
-  const fullName = cookieStore.get("mock_user_name")?.value;
-  const email = cookieStore.get("mock_user_email")?.value;
-
-  // If no role cookie, user is not logged in
-  if (!role || !fullName || !email) {
+  if (!user) {
     redirect("/login");
   }
+
+  const cookieStore = await cookies();
+  const roleCookie = cookieStore.get("user_role")?.value;
+  const role = (user.user_metadata?.role || roleCookie || "candidate") as UserRole;
+
+  // Fetch the actual profile for name/email
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("full_name, email")
+    .eq("id", user.id)
+    .single();
+
+  const fullName = profile?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+  const email = profile?.email || user.email || "";
 
   return (
     <div className="min-h-screen bg-[#F8FAF9]">

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Briefcase, FileText, MessageSquare, Star, Clock, ExternalLink } from "lucide-react";
@@ -20,16 +19,17 @@ function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T | null> {
 }
 
 export default async function CandidateDashboardPage() {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const role = cookieStore.get("user_role")?.value;
-  const fullName = cookieStore.get("mock_user_name")?.value || "Candidate";
-  const userId = cookieStore.get("mock_user_id")?.value;
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const fullName = user.user_metadata?.full_name || "Candidate";
+  const userId = user.id;
 
   if (!role || !userId) redirect("/login");
   if (role !== "candidate") redirect("/recruiter");
-
-  const supabase = createAdminClient();
 
   // Run all DB queries in parallel with 8s timeout each
   const [

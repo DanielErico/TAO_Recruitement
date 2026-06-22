@@ -10,7 +10,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { Job } from "@/types";
 
 interface JobsTableProps {
-  initialJobs: (Job & { department: { name: string } | null })[];
+  initialJobs: (Job & {
+    department: { name: string } | null;
+    applications?: { count: number }[];
+  })[];
 }
 
 export function JobsTable({ initialJobs }: JobsTableProps) {
@@ -182,7 +185,7 @@ export function JobsTable({ initialJobs }: JobsTableProps) {
                   <td className="px-5 py-3.5">
                     <span className="inline-flex items-center gap-1 text-sm text-[var(--color-muted-foreground)]">
                       <Users size={13} />
-                      {job.applicant_count ?? 0}
+                      {job.applications?.[0]?.count ?? job.applicant_count ?? 0}
                     </span>
                   </td>
                   <td className="px-5 py-3.5 text-right">

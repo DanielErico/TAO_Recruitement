@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Calendar, ChevronRight, CheckCircle2, Clock, WifiOff } from "lucide-react";
@@ -20,15 +19,16 @@ function withTimeout<T>(promise: Promise<T>, ms = 8000): Promise<T | null> {
 }
 
 export default async function CandidateInterviewsPage() {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const userId = user.id;
 
   if (!role || !userId) redirect("/login");
   if (role !== "candidate") redirect("/recruiter");
-
-  const supabase = createAdminClient();
 
   // Fetch applications with a 8-second timeout to avoid 90s hangs
   const result = await withTimeout(

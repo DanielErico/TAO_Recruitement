@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Briefcase, FileText, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
@@ -16,15 +15,16 @@ function withTimeout<T>(p: Promise<T>, ms = 8000): Promise<T | null> {
 }
 
 export default async function RecruiterDashboardPage() {
-  const cookieStore = await cookies();
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  const role = cookieStore.get("user_role")?.value;
-  const fullName = cookieStore.get("mock_user_name")?.value || "Recruiter";
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const fullName = user.user_metadata?.full_name || "Recruiter";
 
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   // Stats queries with timeout — safe to fail silently
   const [jobsRes, appsRes, candidatesRes, cvAnalysesRes] = await Promise.all([

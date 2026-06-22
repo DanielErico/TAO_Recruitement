@@ -40,7 +40,17 @@ function LoginForm() {
         body: JSON.stringify({ email: lowerEmail, password }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type");
+      let data: any;
+
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const textResponse = await res.text();
+        console.error("Non-JSON response from /api/auth/login:", textResponse);
+        setError(`Server returned an unexpected response (Status: ${res.status}). Please try again later.`);
+        return;
+      }
 
       if (!res.ok) {
         setError(data.error || "Sign in failed. Please check your credentials.");

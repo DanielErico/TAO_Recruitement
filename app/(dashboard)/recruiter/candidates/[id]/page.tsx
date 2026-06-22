@@ -1,7 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatDate, getStatusConfig, getScoreBg, getInitials } from "@/lib/utils";
@@ -32,7 +31,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("user_profiles")
     .select("full_name")
@@ -48,12 +47,13 @@ export default async function RecruiterCandidateProfilePage({
 }) {
   const { id: candidateId } = await params;
 
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   // Parallel data fetching
   const [userProfileRes, candidateProfileRes, applicationsRes, interviewsRes, evaluationsRes] =

@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { ApplicationReviewClient } from "./ApplicationReviewClient";
 import type { Metadata } from "next";
 
@@ -13,7 +12,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const supabase = createAdminClient();
+  const supabase = await createClient();
   const { data: app } = await supabase
     .from("applications")
     .select(`
@@ -35,12 +34,13 @@ export default async function RecruiterApplicationReviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: appId } = await params;
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
-
-  const supabase = createAdminClient();
 
   // 1. Fetch application with candidate + job details
   const { data: application } = await supabase

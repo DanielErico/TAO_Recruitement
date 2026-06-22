@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
 import { formatDate } from "@/lib/utils";
 import type { Metadata } from "next";
 import { CandidateProfileClient } from "./CandidateProfileClient";
@@ -9,13 +8,15 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "My Profile" };
 
 export default async function CandidateProfilePage() {
-  const cookieStore = await cookies();
-  const userId = cookieStore.get("mock_user_id")?.value;
-  const role = cookieStore.get("user_role")?.value;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) redirect("/login");
+
+  const role = user.user_metadata?.role;
+  const userId = user.id;
 
   if (!userId || role !== "candidate") redirect("/login");
-
-  const supabase = createAdminClient();
 
   // Fetch user profile + candidate profile in parallel
   const [userProfileRes, candidateProfileRes, docsRes] = await Promise.all([

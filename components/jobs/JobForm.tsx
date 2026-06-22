@@ -208,7 +208,7 @@ export function JobForm({ job, departments, userId, mode }: JobFormProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="salary_min">Salary Min (£)</Label>
+            <Label htmlFor="salary_min">Salary Min (₦)</Label>
             <Input
               id="salary_min"
               type="number"
@@ -219,7 +219,7 @@ export function JobForm({ job, departments, userId, mode }: JobFormProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="salary_max">Salary Max (£)</Label>
+            <Label htmlFor="salary_max">Salary Max (₦)</Label>
             <Input
               id="salary_max"
               type="number"
