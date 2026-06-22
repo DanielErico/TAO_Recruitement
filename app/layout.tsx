@@ -10,6 +10,11 @@ export const metadata: Metadata = {
   description:
     "AI-powered recruitment platform — automate candidate screening, assessment, and reporting while keeping recruiters in control.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  icons: {
+    icon: "/logo.webp",
+    shortcut: "/logo.webp",
+    apple: "/logo.webp",
+  },
 };
 
 export default function RootLayout({
