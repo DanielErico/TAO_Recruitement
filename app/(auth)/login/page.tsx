@@ -22,6 +22,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   const urlError = searchParams.get("error");
+  const urlMessage = searchParams.get("message");
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -131,6 +132,12 @@ function LoginForm() {
             </button>
           </div>
         </div>
+
+        {urlMessage && (
+          <p className="text-sm text-emerald-600 bg-emerald-50 rounded-md px-3 py-2 border border-emerald-100">
+            {urlMessage}
+          </p>
+        )}
 
         {(error || urlError) && (
           <p className="text-sm text-destructive bg-red-50 rounded-md px-3 py-2">
