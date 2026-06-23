@@ -22,10 +22,11 @@ export default function ResetPasswordPage() {
     setError(null);
     setLoading(true);
 
+    const origin = typeof window !== "undefined" ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(
       email,
       {
-        redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/update-password`,
+        redirectTo: `${origin}/update-password`,
       }
     );
 
