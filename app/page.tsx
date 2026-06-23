@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { MapPin, Briefcase, Clock, ChevronRight } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -19,7 +19,8 @@ export default async function HomePage() {
     if (role === "candidate") redirect("/candidate");
   }
 
-  const { data: jobsData } = await supabase
+  const serviceClient = await createServiceClient();
+  const { data: jobsData } = await serviceClient
     .from("jobs")
     .select("*, department:departments(name)")
     .eq("status", "published")
@@ -54,24 +55,43 @@ export default async function HomePage() {
       </header>
 
       {/* Hero */}
-      <section className="bg-[var(--color-brand)] text-white py-20 px-6 relative overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-5"
-          style={{
-            backgroundImage: `radial-gradient(circle at 1px 1px, white 1px, transparent 0)`,
-            backgroundSize: "28px 28px",
-          }}
-        />
-        <div className="max-w-3xl mx-auto text-center relative z-10 space-y-4">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Join the TAO Team</h1>
-          <p className="text-lg md:text-xl opacity-90 font-medium">
-            Discover your next career move and help us build the future.
-          </p>
+      <section className="relative bg-[#C2DFB3] overflow-hidden">
+        {/* Background Image & Overlay */}
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/jobs-hero.png"
+            alt="TAO Team"
+            fill
+            className="object-cover object-center lg:object-right"
+            priority
+          />
+          {/* Soft Green gradient overlay matching user mockup */}
+          <div className="absolute inset-0 bg-[#C2DFB3]/50 sm:bg-gradient-to-r sm:from-[#C2DFB3]/80 sm:via-[#C2DFB3]/40 sm:to-transparent"></div>
+        </div>
+
+        {/* Content Overlay */}
+        <div className="relative z-10 max-w-5xl mx-auto px-6 py-20 md:py-32 flex flex-col items-start justify-center min-h-[400px]">
+          <div className="max-w-lg space-y-5">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-[#2A2A2A]">
+              Ready to live your <span className="text-[#046C44]">Dream</span>?
+            </h1>
+            <p className="text-base md:text-lg text-[#444444] font-medium leading-relaxed max-w-md">
+              Come join a team that&apos;s making agriculture a viable and fulfilling economic option for millions of young people.
+            </p>
+            <div className="pt-2">
+              <a
+                href="#open-roles"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-[#046C44] px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#035a38] transition-all"
+              >
+                Open Roles <ChevronRight className="h-4 w-4" />
+              </a>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* Job Listings */}
-      <main className="max-w-4xl mx-auto px-6 py-16 space-y-12">
+      <main id="open-roles" className="max-w-4xl mx-auto px-6 py-16 space-y-12">
         {Object.entries(jobsByDept).length === 0 ? (
           <div className="text-center py-20">
             <Briefcase size={48} className="mx-auto text-[var(--color-muted-foreground)] opacity-20 mb-4" strokeWidth={1} />
