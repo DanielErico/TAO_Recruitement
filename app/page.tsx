@@ -80,10 +80,10 @@ export default async function HomePage() {
             </p>
             <div className="pt-2">
               <a
-                href="#open-roles"
+                href="/register"
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-[#046C44] px-6 py-3 text-sm font-semibold text-white shadow-sm hover:bg-[#035a38] transition-all"
               >
-                Open Roles <ChevronRight className="h-4 w-4" />
+                Join the team <ChevronRight className="h-4 w-4" />
               </a>
             </div>
           </div>
