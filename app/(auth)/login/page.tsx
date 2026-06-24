@@ -140,12 +140,22 @@ function LoginForm() {
         )}
 
         {(error || urlError) && (
-          <p className="text-sm text-destructive bg-red-50 rounded-md px-3 py-2">
-            {error ||
-              (urlError === "profile_not_found"
-                ? "Database profile not found. If this is a new setup, please ensure you have run the Supabase database migrations (001, 002, 003) in your Supabase SQL Editor."
-                : urlError)}
-          </p>
+          <div className="text-sm text-destructive bg-red-50 rounded-md px-3 py-2 space-y-1">
+            <p>
+              {error ||
+                (urlError === "profile_not_found"
+                  ? "Database profile not found. If this is a new setup, please ensure you have run the Supabase database migrations (001, 002, 003) in your Supabase SQL Editor."
+                  : urlError)}
+            </p>
+            {(error?.toLowerCase().includes("incorrect") || error?.toLowerCase().includes("invalid")) && (
+              <p className="text-xs text-muted-foreground">
+                Forgotten your password?{" "}
+                <Link href="/reset-password" className="text-brand underline underline-offset-2">
+                  Reset it here
+                </Link>
+              </p>
+            )}
+          </div>
         )}
 
         <Button type="submit" className="w-full" disabled={loading}>

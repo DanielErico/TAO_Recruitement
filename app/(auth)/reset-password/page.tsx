@@ -26,23 +26,36 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  // Phase 1: Request recovery email with PIN
+  // Phase 1: Request recovery email with OTP code (via secure server API)
   async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-      email.trim().toLowerCase()
-    );
+    try {
+      const res = await fetch("/api/auth/reset-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
 
-    if (resetError) {
-      setError(resetError.message);
-    } else {
+      const data = await res.json();
+
+      if (res.status === 429) {
+        // Rate limited — show the actual message
+        setError(data.error || "Too many requests. Please try again later.");
+        setLoading(false);
+        return;
+      }
+
+      // For all other outcomes (success OR unknown email) we advance to the
+      // verify step without revealing whether the email is registered.
       setStep("verify");
+    } catch {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   // Phase 2: Verify OTP PIN & Update password
@@ -129,10 +142,13 @@ export default function ResetPasswordPage() {
             <ArrowLeft size={12} /> Back to email entry
           </button>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-            Enter reset code
+            Check your email
           </h1>
           <p className="text-sm text-muted-foreground">
-            We sent a reset code to <strong>{email}</strong>. Enter it below along with your new password.
+            We sent a 6-digit reset code to <strong>{email}</strong>. Enter it below along with your new password.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Check your spam folder if you don&apos;t see it within a minute.
           </p>
         </div>
 
@@ -198,10 +214,10 @@ export default function ResetPasswordPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Reset password
+          Reset your password
         </h1>
         <p className="text-sm text-muted-foreground">
-          Enter your email address and we&apos;ll send a password reset code.
+          Enter your email address and we&apos;ll send you a 6-digit code to reset your password.
         </p>
       </div>
 
