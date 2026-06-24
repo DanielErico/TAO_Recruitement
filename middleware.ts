@@ -39,7 +39,11 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const role = user?.user_metadata?.role || "candidate";
+  // Prefer user_metadata.role (set at account creation), fall back to the
+  // user_role cookie that /api/auth/login writes after a DB profile lookup.
+  // This ensures recruiters created without metadata still get the right role.
+  const cookieRole = request.cookies.get("user_role")?.value;
+  const role = user?.user_metadata?.role || (user ? cookieRole : null) || "candidate";
   const isAuthenticated = !!user;
 
   // 1. Redirect authenticated users away from auth pages

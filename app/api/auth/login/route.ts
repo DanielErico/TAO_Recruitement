@@ -99,7 +99,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // ── 3. Set session cookies ───────────────────────────────────
+    // ── 3. Patch user_metadata.role if missing/stale ─────────────
+    // Ensures the middleware (which reads user_metadata) always has the right role.
+    const metaRole = authData.user.user_metadata?.role;
+    if (!metaRole || metaRole !== profile.role) {
+      await adminDb.auth.admin.updateUserById(userId, {
+        user_metadata: {
+          ...authData.user.user_metadata,
+          role: profile.role,
+          full_name: profile.full_name,
+        },
+      });
+    }
+
+    // ── 4. Set session cookies ───────────────────────────────────
     const cookieStore = await cookies();
     cookieStore.set("user_role", profile.role, { maxAge: 604800, path: "/" });
     cookieStore.delete("mock_user_id");
