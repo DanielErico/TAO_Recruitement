@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { JobForm } from "@/components/jobs/JobForm";
 import { Button } from "@/components/ui/button";
 import { formatDate, getStatusConfig } from "@/lib/utils";
@@ -18,7 +18,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data } = await supabase.from("jobs").select("title").eq("id", id).single();
   return { title: data?.title ? `Edit — ${data.title}` : "Edit Job" };
 }
@@ -30,14 +30,18 @@ export default async function EditJobPage({
 }) {
   const { id } = await params;
 
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  // Authenticate via real Supabase session
+  const supabaseSession = await createClient();
+  const { data: { user } } = await supabaseSession.auth.getUser();
+  if (!user) redirect("/login");
 
-  if (!role || !userId) redirect("/login");
+  const role = user.user_metadata?.role;
+  const userId = user.id;
+
+  if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
 
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: job } = await supabase
     .from("jobs")

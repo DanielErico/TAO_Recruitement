@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, X, Plus } from "lucide-react";
-import type { Department, Job } from "@/types";
+import type { Department, Job, JobRegion } from "@/types";
+import { NigeriaRegionSelector } from "@/components/jobs/NigeriaRegionSelector";
 
 interface JobFormProps {
   job?: Partial<Job>;
@@ -35,6 +36,7 @@ export function JobForm({ job, departments, userId, mode }: JobFormProps) {
   const [skills, setSkills] = useState<string[]>(job?.skills_required ?? []);
   const [skillInput, setSkillInput] = useState("");
   const [deadline, setDeadline] = useState(job?.application_deadline ?? "");
+  const [regions, setRegions] = useState<JobRegion[]>(job?.regions ?? []);
   const [status, setStatus] = useState<"draft" | "published">(
     (job?.status as "draft" | "published") ?? "draft"
   );
@@ -70,6 +72,7 @@ export function JobForm({ job, departments, userId, mode }: JobFormProps) {
         responsibilities,
         requirements,
         skills_required: skills,
+        regions,
         application_deadline: deadline || null,
         status: submitStatus,
       };
@@ -322,6 +325,18 @@ export function JobForm({ job, departments, userId, mode }: JobFormProps) {
             ))}
           </div>
         )}
+      </section>
+
+      {/* Section: Job Regions */}
+      <section className="space-y-3">
+        <div className="space-y-1">
+          <h2 className="section-title">Job Regions (Nigeria)</h2>
+          <p className="text-xs text-[var(--color-muted-foreground)]">
+            Specify the Nigerian state(s) and LGA(s) where this position is available.
+            You can add multiple regions.
+          </p>
+        </div>
+        <NigeriaRegionSelector value={regions} onChange={setRegions} />
       </section>
 
       {error && (

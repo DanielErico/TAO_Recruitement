@@ -99,6 +99,17 @@ export default async function PublicJobDetailsPage({
                 {job.location} {job.remote && "(Remote)"}
               </span>
             )}
+            {job.regions && job.regions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                <MapPin size={16} className="text-[var(--color-brand)]" />
+                <span className="text-[var(--color-brand)] font-semibold">Hiring Regions:</span>
+                {job.regions.map((r: any, idx: number) => (
+                  <span key={idx} className="bg-[var(--color-brand-light)] text-[var(--color-brand)] px-2.5 py-0.5 rounded text-xs font-semibold">
+                    {r.state} ({r.lga})
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

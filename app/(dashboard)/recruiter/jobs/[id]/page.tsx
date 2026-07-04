@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, getStatusConfig } from "@/lib/utils";
@@ -15,7 +16,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const supabase = await createClient();
+  const supabase = createAdminClient();
   const { data: job } = await supabase
     .from("jobs")
     .select("title")
@@ -31,13 +32,18 @@ export default async function RecruiterJobDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: jobId } = await params;
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+
+  // Authenticate via real Supabase session
+  const supabaseSession = await createClient();
+  const { data: { user } } = await supabaseSession.auth.getUser();
   if (!user) redirect("/login");
 
   const role = user.user_metadata?.role;
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
+
+  // Use admin client to bypass RLS (consistent with how API routes work)
+  const supabase = createAdminClient();
 
   // 1. Fetch job with department name
   const { data: job } = await supabase

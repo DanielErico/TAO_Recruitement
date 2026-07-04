@@ -130,6 +130,12 @@ export default async function HomePage() {
                           <Clock size={14} />{" "}
                           {job.employment_type.replace("_", " ")}
                         </span>
+                        {job.regions && job.regions.length > 0 && (
+                          <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--color-brand-light)] text-[var(--color-brand)] text-xs font-semibold">
+                            <MapPin size={11} />
+                            {job.regions.map((r: any) => `${r.state} (${r.lga})`).join(", ")}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="mt-4 sm:mt-0 flex items-center justify-end text-[var(--color-brand)]">

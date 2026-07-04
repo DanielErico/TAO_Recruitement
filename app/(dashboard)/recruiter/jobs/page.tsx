@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { Button } from "@/components/ui/button";
 import { Plus, Search, Briefcase } from "lucide-react";
 import { JobsTable } from "@/components/jobs/JobsTable";
@@ -15,6 +16,7 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ q?: string; status?: string; dept?: string }>;
 }) {
+  // Authenticate via real Supabase session
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
@@ -23,13 +25,15 @@ export default async function JobsPage({
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
 
+  // Use admin client for data queries to bypass RLS
+  const adminDb = createAdminClient();
   const params = await searchParams;
   const q = params.q ?? "";
   const statusFilter = params.status ?? "";
   const deptFilter = params.dept ?? "";
 
   // Build query
-  let query = supabase
+  let query = adminDb
     .from("jobs")
     .select(`
       *,
@@ -46,7 +50,7 @@ export default async function JobsPage({
   const jobs = jobsData || [];
 
   // Fetch departments for filter
-  const { data: deptsData } = await supabase
+  const { data: deptsData } = await adminDb
     .from("departments")
     .select("id, name")
     .order("name");

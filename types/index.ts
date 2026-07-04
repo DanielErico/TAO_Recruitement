@@ -41,6 +41,12 @@ export type JobStatus = "draft" | "published" | "archived" | "closed";
 export type EmploymentType = "full_time" | "part_time" | "contract" | "internship";
 export type ExperienceLevel = "entry" | "mid" | "senior" | "lead" | "executive";
 
+/** A Nigeria deployment region: one state + one LGA */
+export interface JobRegion {
+  state: string;
+  lga: string;
+}
+
 export interface Department {
   id: string;
   name: string;
@@ -62,6 +68,7 @@ export interface Job {
   responsibilities: string;
   requirements: string;
   skills_required: string[];
+  regions: JobRegion[];
   status: JobStatus;
   application_deadline?: string;
   created_by: string;

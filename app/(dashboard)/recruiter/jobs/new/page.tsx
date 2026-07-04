@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { JobForm } from "@/components/jobs/JobForm";
 import type { Metadata } from "next";
 import type { Department } from "@/types";
@@ -19,10 +20,11 @@ export default async function NewJobPage() {
   if (!role) redirect("/login");
   if (!["recruiter", "admin"].includes(role)) redirect("/candidate");
 
-  // Fetch departments — these are public reference data, safe to query
+  // Fetch departments — use admin client to ensure database retrieval is robust
   let departments: Department[] = [];
   try {
-    const { data } = await supabase
+    const adminDb = createAdminClient();
+    const { data } = await adminDb
       .from("departments")
       .select("id, name, created_at")
       .order("name");
