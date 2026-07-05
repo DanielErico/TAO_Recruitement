@@ -11,9 +11,9 @@ export const metadata: Metadata = {
     "AI-powered recruitment platform — automate candidate screening, assessment, and reporting while keeping recruiters in control.",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
   icons: {
-    icon: "/logo.webp",
-    shortcut: "/logo.webp",
-    apple: "/logo.webp",
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/favicon.png",
   },
 };
 
