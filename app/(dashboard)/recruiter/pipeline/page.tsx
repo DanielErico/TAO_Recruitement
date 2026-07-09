@@ -48,15 +48,19 @@ export default function RecruiterPipelinePage() {
   async function fetchPipeline() {
     setLoading(true);
     try {
-      // Query database directly using client-side. Since recruiters bypass RLS on server, we do the query here via an admin wrapper or standard query
-      // To bypass RLS safely and fetch all applications for the recruiter, let's create a public API endpoint or call a status API
       const res = await fetch("/api/applications/list");
+      console.log("[Pipeline] fetch applications response status:", res.status);
       const data = await res.json();
+      if (!res.ok) {
+        console.error("[Pipeline] API error:", data.error || "Unknown error");
+      }
       if (data.applications) {
         setApplications(data.applications);
+      } else {
+        console.warn("[Pipeline] No applications array in response:", data);
       }
-    } catch (err) {
-      console.error("Failed to fetch pipeline data:", err);
+    } catch (err: any) {
+      console.error("[Pipeline] Failed to fetch pipeline data:", err.message);
     } finally {
       setLoading(false);
     }

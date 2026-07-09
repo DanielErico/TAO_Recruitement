@@ -195,7 +195,8 @@ async function extractDOC(buffer: Buffer, fileName: string): Promise<CVExtractio
       ? WordExtractorModule
       : (WordExtractorModule.default || WordExtractorModule)) as any;
 
-    const extractor = new WordExtractor();
+    // Use Reflect.construct to instantiate the class, bypassing compiler ES5 downleveling of the 'new' keyword
+    const extractor = Reflect.construct(WordExtractor, []) as any;
     const doc = await extractor.extract(buffer);
     const rawText = doc.getBody() ?? "";
     const cleaned = cleanText(rawText);

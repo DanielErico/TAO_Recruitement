@@ -1,14 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
+import { createServerClient } from "@supabase/ssr";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
 
-  if (!role || !["recruiter", "admin"].includes(role)) {
+  // Create a server-side Supabase client to authenticate the user securely via JWT session
+  const supabaseAuth = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // Safe to ignore in dynamic route context
+          }
+        },
+      },
+    }
+  );
+
+  const { data: { user } } = await supabaseAuth.auth.getUser();
+  const cookieRole = cookieStore.get("user_role")?.value;
+  const role = user?.user_metadata?.role || (user ? cookieRole : null) || "candidate";
+
+  if (!user || !role || !["recruiter", "admin"].includes(role)) {
     return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });
   }
 
