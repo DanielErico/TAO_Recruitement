@@ -47,13 +47,20 @@ export async function extractCVText(
   }
 
   // ── DOCX ─────────────────────────────────────────────────────
+  // ── DOCX ─────────────────────────────────────────────────────
   if (
     mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
-    mimeType === "application/msword" ||
-    ext === "docx" ||
-    ext === "doc"
+    ext === "docx"
   ) {
     return extractDOCX(buffer, fileName);
+  }
+
+  // ── DOC (Legacy Word Binary) ─────────────────────────────────
+  if (
+    mimeType === "application/msword" ||
+    ext === "doc"
+  ) {
+    return extractDOC(buffer, fileName);
   }
 
   // ── Plain Text / Markdown ─────────────────────────────────────
@@ -174,6 +181,47 @@ async function extractDOCX(buffer: Buffer, fileName: string): Promise<CVExtracti
       text: "",
       status: "failed",
       error: `DOCX text extraction failed: ${err.message}`,
+      charCount: 0,
+    };
+  }
+}
+
+// ── DOC (Legacy Word Binary) Extraction ─────────────────────────
+async function extractDOC(buffer: Buffer, fileName: string): Promise<CVExtractionResult> {
+  try {
+    // @ts-ignore
+    const WordExtractorModule = await import("word-extractor");
+    const WordExtractor = (typeof WordExtractorModule === "function"
+      ? WordExtractorModule
+      : (WordExtractorModule.default || WordExtractorModule)) as any;
+
+    const extractor = new WordExtractor();
+    const doc = await extractor.extract(buffer);
+    const rawText = doc.getBody() ?? "";
+    const cleaned = cleanText(rawText);
+
+    console.log(`[CVExtractor] DOC extracted: ${cleaned.length} chars`);
+
+    if (cleaned.length < MIN_TEXT_LENGTH) {
+      return {
+        text: "",
+        status: "empty",
+        error: "DOC file has insufficient readable text content.",
+        charCount: cleaned.length,
+      };
+    }
+
+    return {
+      text: cleaned,
+      status: "success",
+      charCount: cleaned.length,
+    };
+  } catch (err: any) {
+    console.error(`[CVExtractor] DOC extraction failed for ${fileName}:`, err.message);
+    return {
+      text: "",
+      status: "failed",
+      error: `DOC text extraction failed: ${err.message}`,
       charCount: 0,
     };
   }
