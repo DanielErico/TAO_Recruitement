@@ -73,8 +73,12 @@ export async function POST(request: NextRequest) {
   let cvMimeType = "application/pdf";
   let cvFileName = "resume.pdf";
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
+
   try {
-    const fileResponse = await fetch(application.resume_url);
+    const fileResponse = await fetch(application.resume_url, { signal: controller.signal });
+    clearTimeout(timeoutId);
     if (!fileResponse.ok) {
       return NextResponse.json(
         { error: `CV file inaccessible — HTTP ${fileResponse.status} when fetching from storage.` },
@@ -90,10 +94,21 @@ export async function POST(request: NextRequest) {
     cvFileName = decodeURIComponent(urlParts[urlParts.length - 1] || "resume");
 
     const arrayBuffer = await fileResponse.arrayBuffer();
-    cvBuffer = Buffer.from(arrayBuffer);
+    const tempBuffer = Buffer.from(arrayBuffer);
 
+    // Validate that the buffer is not HTML or JSON (which happens on slow router redirects or proxy blocks)
+    const signature = tempBuffer.toString("utf8", 0, 10).trim();
+    if (signature.startsWith("<!DOCTYPE") || signature.startsWith("<html") || signature.startsWith("{")) {
+      return NextResponse.json(
+        { error: `Downloaded CV file is invalid or corrupted (resolved to non-binary text content: "${signature.substring(0, 30)}").` },
+        { status: 400 }
+      );
+    }
+
+    cvBuffer = tempBuffer;
     console.log(`[Reanalyze] Downloaded CV: ${cvFileName} (${cvBuffer.length} bytes)`);
   } catch (err: any) {
+    clearTimeout(timeoutId);
     return NextResponse.json(
       { error: `Failed to download CV file: ${err.message}` },
       { status: 500 }

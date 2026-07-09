@@ -187,7 +187,7 @@ export async function POST(request: NextRequest) {
         resumeUrl = profile.resume_url;
         cvFileName = profile.resume_name || "resume.pdf";
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 seconds timeout
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
         try {
           const fileResponse = await fetch(profile.resume_url, { signal: controller.signal });
           clearTimeout(timeoutId);
@@ -195,8 +195,16 @@ export async function POST(request: NextRequest) {
             const contentType = fileResponse.headers.get("content-type") || "application/pdf";
             cvMimeType = contentType.split(";")[0].trim();
             const arrayBuffer = await fileResponse.arrayBuffer();
-            cvBuffer = Buffer.from(arrayBuffer);
-            console.log(`[Applications] Loaded default CV from profile: ${cvFileName} (${cvBuffer.length} bytes)`);
+            const tempBuffer = Buffer.from(arrayBuffer);
+
+            // Validate that the buffer is not HTML or JSON (which happens on slow router redirects or proxy blocks)
+            const signature = tempBuffer.toString("utf8", 0, 10).trim();
+            if (signature.startsWith("<!DOCTYPE") || signature.startsWith("<html") || signature.startsWith("{")) {
+              console.warn(`[Applications] Default CV download resolved to invalid content (HTML/JSON instead of binary): "${signature.substring(0, 50)}"`);
+            } else {
+              cvBuffer = tempBuffer;
+              console.log(`[Applications] Loaded default CV from profile: ${cvFileName} (${cvBuffer.length} bytes)`);
+            }
           } else {
             console.warn(`[Applications] Default CV URL inaccessible: HTTP ${fileResponse.status}`);
           }

@@ -11,6 +11,7 @@
  */
 
 import https from "https";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // ── HTTP Utility ─────────────────────────────────────────────────
 /**
@@ -131,16 +132,20 @@ export async function analyzeCV(
   timeoutMs = 60000
 ): Promise<CVAnalysisResult> {
   const apiKey = process.env.NVIDIA_API_KEY;
+  const geminiKey = process.env.GEMINI_API_KEY;
 
-  if (!apiKey) {
-    throw new Error("NVIDIA_API_KEY environment variable is not set.");
+  if (!apiKey && !geminiKey) {
+    throw new Error("Neither NVIDIA_API_KEY nor GEMINI_API_KEY environment variable is set.");
   }
 
   if (!cvText || cvText.trim().length < 100) {
     throw new Error("CV text is too short or empty — cannot perform AI analysis.");
   }
 
-  const systemPrompt = `You are an expert ATS (Applicant Tracking System) AI for TAO Recruit AI.
+  // If NVIDIA API key is available, attempt to use it first
+  if (apiKey) {
+    try {
+      const systemPrompt = `You are an expert ATS (Applicant Tracking System) AI for TAO Recruit AI.
 Your job is to read the candidate's CV text carefully and produce a structured JSON analysis.
 
 STRICT RULES:
@@ -180,12 +185,12 @@ Required JSON structure (return exactly this, no extra fields):
   "overall_score": 82
 }`;
 
-  // Limit CV text to 12,000 chars to stay within token budget while preserving full content
-  const cvTextTruncated = cvText.length > 12000
-    ? cvText.substring(0, 12000) + "\n[... CV truncated at 12,000 characters for token limit ...]"
-    : cvText;
+      // Limit CV text to 12,000 chars to stay within token budget while preserving full content
+      const cvTextTruncated = cvText.length > 12000
+        ? cvText.substring(0, 12000) + "\n[... CV truncated at 12,000 characters for token limit ...]"
+        : cvText;
 
-  const userContent = `--- JOB ROLE ---
+      const userContent = `--- JOB ROLE ---
 ${jobTitle}
 
 --- JOB DESCRIPTION ---
@@ -199,53 +204,60 @@ ${cvTextTruncated}
 
 Analyze the CV above. Return ONLY valid JSON.`;
 
-  const requestBody = JSON.stringify({
-    model: "meta/llama-3.3-70b-instruct",
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userContent },
-    ],
-    temperature: 0.1,
-    max_tokens: 2000,
-    stream: false,
-  });
+      const requestBody = JSON.stringify({
+        model: "meta/llama-3.3-70b-instruct",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 2000,
+        stream: false,
+      });
 
-  console.log("[AI:CV] Calling Nemotron 70B for CV analysis...");
-  console.log("[AI:CV] CV length:", cvText.length, "chars | Job:", jobTitle);
+      console.log("[AI:CV] Calling Nemotron 70B for CV analysis...");
+      console.log("[AI:CV] CV length:", cvText.length, "chars | Job:", jobTitle);
 
-  const rawResponse = await httpsPost(
-    "integrate.api.nvidia.com",
-    "/v1/chat/completions",
-    {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    requestBody,
-    timeoutMs
-  );
+      const rawResponse = await httpsPost(
+        "integrate.api.nvidia.com",
+        "/v1/chat/completions",
+        {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        requestBody,
+        timeoutMs
+      );
 
-  const apiResult = JSON.parse(rawResponse);
-  const content = apiResult.choices?.[0]?.message?.content;
+      const apiResult = JSON.parse(rawResponse);
+      const content = apiResult.choices?.[0]?.message?.content;
 
-  if (!content) {
-    throw new Error("Empty response from NVIDIA Nemotron API — no content returned.");
+      if (!content) {
+        throw new Error("Empty response from NVIDIA Nemotron API — no content returned.");
+      }
+
+      console.log("[AI:CV] Raw response (first 400 chars):", content.substring(0, 400));
+
+      const cleanContent = cleanJsonContent(content);
+      const parsed = JSON.parse(cleanContent);
+
+      return sanitizeCVAnalysisResult(parsed);
+    } catch (err: any) {
+      console.error("[AI:CV] NVIDIA CV analysis failed or timed out:", err.message);
+      if (!geminiKey) {
+        throw err;
+      }
+    }
   }
 
-  console.log("[AI:CV] Raw response (first 400 chars):", content.substring(0, 400));
+  // Fallback to Gemini if NVIDIA fails or is not available
+  console.log("[AI:CV] Falling back to Google Gemini for CV analysis...");
+  return await analyzeCVWithGemini(cvText, jobTitle, jobDescription, jobRequirements);
+}
 
-  const cleanContent = cleanJsonContent(content);
-  let parsed: any;
-
-  try {
-    parsed = JSON.parse(cleanContent);
-  } catch (parseErr: any) {
-    throw new Error(
-      `AI response JSON parsing failed. Raw content: "${content.substring(0, 500)}" — Error: ${parseErr.message}`
-    );
-  }
-
-  // Validate and sanitize the parsed result
-  const result: CVAnalysisResult = {
+// ── Helper to Sanitize CV Analysis Output ─────────────────────────
+function sanitizeCVAnalysisResult(parsed: any): CVAnalysisResult {
+  return {
     professional_summary: String(parsed.professional_summary ?? ""),
     skills: Array.isArray(parsed.skills) ? parsed.skills.map(String) : [],
     strengths: Array.isArray(parsed.strengths) ? parsed.strengths.map(String) : [],
@@ -272,14 +284,110 @@ Analyze the CV above. Return ONLY valid JSON.`;
       : [],
     certifications: Array.isArray(parsed.certifications) ? parsed.certifications.map(String) : [],
     recommended_role_fit: String(parsed.recommended_role_fit ?? ""),
-    overall_score: Math.min(100, Math.max(0, Number(parsed.overall_score ?? parsed.job_fit_score ?? 0))),
+    overall_score: Math.min(100, Math.max(0, Number(parsed.overall_score ?? parsed.job_fit_score ?? 0) || 0)),
   };
+}
 
-  console.log(
-    `[AI:CV] Analysis complete. Score: ${result.overall_score} | Skills: ${result.skills.length} | Role fit: ${result.recommended_role_fit}`
-  );
+// ── Helper to Call Gemini for CV Analysis ─────────────────────────
+async function analyzeCVWithGemini(
+  cvText: string,
+  jobTitle: string,
+  jobDescription: string,
+  jobRequirements: string
+): Promise<CVAnalysisResult> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is not set.");
+  }
 
-  return result;
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.1,
+    },
+  });
+
+  const systemPrompt = `You are an expert ATS (Applicant Tracking System) AI for TAO Recruit AI.
+Your job is to read the candidate's CV text carefully and produce a structured JSON analysis.
+
+STRICT RULES:
+1. Read ONLY the CV text provided. Do NOT invent or hallucinate any information.
+2. Extract real names, skills, companies, degrees, dates from the actual CV.
+3. Generate professional_summary based ONLY on what the CV states.
+4. Strengths must be evidenced by the CV (e.g., "5 years AWS experience from CV").
+5. Risks must be based on observable gaps (e.g., "No leadership experience listed").
+6. If no risks exist, return: ["No significant concerns identified"].
+7. overall_score (0–100) must reflect true CV strength for this specific job role.
+8. You MUST respond with ONLY a valid JSON object matching the schema below.
+
+Required JSON structure (return exactly this, no extra fields):
+{
+  "professional_summary": "Concise summary.",
+  "skills": ["Skill 1", "Skill 2"],
+  "strengths": ["Evidenced strength"],
+  "risks": ["CV gap or concern"],
+  "years_of_experience": "4 years",
+  "work_experience": [
+    {
+      "job_title": "Extracted job title",
+      "company": "Extracted company name",
+      "duration": "Jan 2021 – Present",
+      "responsibilities": ["Responsibility from CV"]
+    }
+  ],
+  "education": [
+    {
+      "institution": "University name",
+      "degree": "Degree name",
+      "year": "Graduation year"
+    }
+  ],
+  "certifications": ["Certification name"],
+  "recommended_role_fit": "Recommended job title",
+  "overall_score": 82
+}`;
+
+  const cvTextTruncated = cvText.length > 12000
+    ? cvText.substring(0, 12000) + "\n[... CV truncated at 12,000 characters for token limit ...]"
+    : cvText;
+
+  const userContent = `--- JOB ROLE ---
+${jobTitle}
+
+--- JOB DESCRIPTION ---
+${jobDescription}
+
+--- JOB REQUIREMENTS ---
+${jobRequirements}
+
+--- CANDIDATE CV (read every word carefully) ---
+${cvTextTruncated}
+
+Analyze the CV above according to the instructions.`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: userContent }] }],
+    systemInstruction: systemPrompt,
+  });
+
+  const content = result.response.text();
+  if (!content) {
+    throw new Error("Empty response from Gemini API.");
+  }
+
+  const cleanContent = cleanJsonContent(content);
+  let parsed: any;
+  try {
+    parsed = JSON.parse(cleanContent);
+  } catch (parseErr: any) {
+    throw new Error(
+      `Gemini response JSON parsing failed. Raw content: "${content.substring(0, 500)}" — Error: ${parseErr.message}`
+    );
+  }
+
+  return sanitizeCVAnalysisResult(parsed);
 }
 
 // ── Interview Question Generation ────────────────────────────────
@@ -298,11 +406,6 @@ export async function generateNextInterviewQuestion(
   globalTimeLeft?: number
 ): Promise<{ question: string; isComplete: boolean; recommendedSeconds: number }> {
   const apiKey = process.env.NVIDIA_API_KEY;
-
-  if (!apiKey) {
-    console.warn("[AI] NVIDIA_API_KEY not set. Using fallback interview question.");
-    return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex, globalTimeLeft);
-  }
 
   const systemPrompt = `You are a professional, empathetic, and sharp AI technical interviewer for TAO Recruit AI.
 Your goal is to conduct a screening interview of candidate ${candidateName} for the role of ${jobTitle}.
@@ -352,6 +455,10 @@ Generate interview question #${questionIndex + 1}:`;
   console.log("[AI] Generating interview question #" + (questionIndex + 1) + " for", candidateName);
 
   try {
+    if (!apiKey) {
+      throw new Error("NVIDIA_API_KEY not set.");
+    }
+
     const rawResponse = await httpsPost(
       "integrate.api.nvidia.com",
       "/v1/chat/completions",
@@ -380,8 +487,100 @@ Generate interview question #${questionIndex + 1}:`;
     };
   } catch (err: any) {
     console.error("[AI] NVIDIA Interview Question generation failed:", err.message);
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log("[AI] Falling back to Gemini for interview question generation...");
+        return await generateNextQuestionWithGemini(
+          jobTitle,
+          jobDescription,
+          candidateName,
+          cvSummary,
+          cvSkills,
+          chatHistory,
+          questionIndex,
+          globalTimeLeft
+        );
+      } catch (geminiErr: any) {
+        console.error("[AI] Gemini fallback for interview question generation failed:", geminiErr.message);
+      }
+    }
     return generateFallbackInterviewQuestion(jobTitle, candidateName, chatHistory, questionIndex, globalTimeLeft);
   }
+}
+
+// ── Helper to Call Gemini for Interview Question Generation ──────
+async function generateNextQuestionWithGemini(
+  jobTitle: string,
+  jobDescription: string,
+  candidateName: string,
+  cvSummary: string,
+  cvSkills: string[],
+  chatHistory: { question: string; response: string }[],
+  questionIndex: number,
+  globalTimeLeft?: number
+): Promise<{ question: string; isComplete: boolean; recommendedSeconds: number }> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.7,
+    },
+  });
+
+  const systemPrompt = `You are a professional, empathetic, and sharp AI technical interviewer for TAO Recruit AI.
+Your goal is to conduct a screening interview of candidate ${candidateName} for the role of ${jobTitle}.
+
+You must respond ONLY with a valid JSON object matching the schema below.
+
+JSON structure (return exactly this, no extra fields):
+{
+  "question": "Your next interview question text...",
+  "recommendedSeconds": 60,
+  "isComplete": false
+}
+
+Rules:
+1. Determine if you have gathered enough information about the candidate's technical skills, experience, and suitability. If you have gathered enough details (typically between 3 to 7 questions total depending on answer quality), set "isComplete" to true and set "question" to a warm closing remark.
+2. If the candidate's answers are too brief, ask follow-up questions to probe deeper. Otherwise, move to another requirement.
+3. Set "recommendedSeconds" to an appropriate value between 30 and 120 depending on the question complexity.
+4. Keep questions concise and professional (2-3 sentences max).
+5. TONE: Friendly, conversational, and encouraging.
+6. Reference specific details from the candidate's CV or previous answers to make it feel personal.
+7. TIME LIMIT: The remaining interview time is ${globalTimeLeft !== undefined ? globalTimeLeft : 300} seconds. If the remaining time is less than 80 seconds, you MUST conclude the interview immediately. Set "isComplete" to true and write a warm concluding thank you message. Do NOT ask any more questions.`;
+
+  const prompt = `--- JOB SPECIFICATIONS ---
+Role: ${jobTitle}
+Description: ${jobDescription}
+
+--- CANDIDATE CV PROFILE ---
+Summary: ${cvSummary}
+Skills: ${cvSkills.join(", ")}
+
+--- CONVERSATIONAL HISTORY ---
+${chatHistory.map((h, i) => `Q${i + 1}: ${h.question}\nA${i + 1}: ${h.response}`).join("\n\n")}
+
+Generate interview question #${questionIndex + 1}:`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    systemInstruction: systemPrompt,
+  });
+
+  const content = result.response.text();
+  if (!content) throw new Error("Empty response from Gemini");
+
+  const cleanContent = cleanJsonContent(content);
+  const parsed = JSON.parse(cleanContent);
+
+  return {
+    question: parsed.question || "",
+    isComplete: !!parsed.isComplete,
+    recommendedSeconds: Number(parsed.recommendedSeconds) || 60,
+  };
 }
 
 /**
@@ -451,11 +650,6 @@ export async function evaluateInterview(
 }> {
   const apiKey = process.env.NVIDIA_API_KEY;
 
-  if (!apiKey) {
-    console.warn("[AI] NVIDIA_API_KEY not set. Using fallback interview evaluation.");
-    return generateFallbackEvaluation(cvAnalysis);
-  }
-
   const systemPrompt = `You are an expert AI recruiting evaluator for TAO Recruit AI.
 Analyze the candidate's CV details alongside their screening interview transcript to output a precise evaluation and scores.
 
@@ -505,6 +699,10 @@ Analyze the candidate's qualifications and interview performance to compute scor
   console.log("[AI] Running candidate evaluation LLM call for job:", jobTitle);
 
   try {
+    if (!apiKey) {
+      throw new Error("NVIDIA_API_KEY not set.");
+    }
+
     const rawResponse = await httpsPost(
       "integrate.api.nvidia.com",
       "/v1/chat/completions",
@@ -544,8 +742,111 @@ Analyze the candidate's qualifications and interview performance to compute scor
     };
   } catch (err: any) {
     console.error("[AI] NVIDIA Interview Evaluation failed:", err.message);
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log("[AI] Falling back to Gemini for interview evaluation...");
+        return await evaluateInterviewWithGemini(
+          jobTitle,
+          jobDescription,
+          jobRequirements,
+          cvAnalysis,
+          interviewResponses
+        );
+      } catch (geminiErr: any) {
+        console.error("[AI] Gemini fallback for interview evaluation failed:", geminiErr.message);
+      }
+    }
     return generateFallbackEvaluation(cvAnalysis);
   }
+}
+
+// ── Helper to Call Gemini for Interview Evaluation ────────────────
+async function evaluateInterviewWithGemini(
+  jobTitle: string,
+  jobDescription: string,
+  jobRequirements: string,
+  cvAnalysis: any,
+  interviewResponses: { question: string; response: string }[]
+): Promise<{
+  technical_score: number;
+  communication_score: number;
+  experience_score: number;
+  problem_solving_score: number;
+  culture_fit_score: number;
+  overall_score: number;
+  recommendation: string;
+  recruiter_summary: string;
+  ai_rationale: string;
+}> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: "gemini-2.5-flash",
+    generationConfig: {
+      responseMimeType: "application/json",
+      temperature: 0.2,
+    },
+  });
+
+  const systemPrompt = `You are an expert AI recruiting evaluator for TAO Recruit AI.
+Analyze the candidate's CV details alongside their screening interview transcript to output a precise evaluation and scores.
+
+You must respond ONLY with a valid JSON object matching the schema below.
+
+JSON structure (return exactly this, no extra fields):
+{
+  "technical_score": 0,
+  "communication_score": 0,
+  "experience_score": 0,
+  "problem_solving_score": 0,
+  "culture_fit_score": 0,
+  "overall_score": 0,
+  "recommendation": "highly_recommended | recommended | consider | not_recommended",
+  "recruiter_summary": "Honest custom summary detailing their qualifications and how they answered interview questions.",
+  "ai_rationale": "Clear custom rationale justifying the scores by highlighting specific strengths and gaps from their CV and responses."
+}`;
+
+  const prompt = `--- JOB SPECIFICATIONS ---
+Role: ${jobTitle}
+Description: ${jobDescription}
+Requirements: ${jobRequirements}
+
+--- CANDIDATE CV EXTRACTED DETAILS ---
+Summary: ${cvAnalysis.professional_summary || ""}
+Skills: ${Array.isArray(cvAnalysis.skills) ? cvAnalysis.skills.join(", ") : ""}
+Strengths: ${Array.isArray(cvAnalysis.strengths) ? cvAnalysis.strengths.join(". ") : ""}
+Risks: ${Array.isArray(cvAnalysis.risks) ? cvAnalysis.risks.join(". ") : (Array.isArray(cvAnalysis.weaknesses) ? cvAnalysis.weaknesses.join(". ") : "")}
+Experience: ${JSON.stringify(cvAnalysis.work_experience || [])}
+
+--- INTERVIEW DIALOG TRANSCRIPT ---
+${interviewResponses.map((r, i) => `Q${i + 1}: ${r.question}\nA${i + 1}: ${r.response}`).join("\n\n")}
+
+Analyze the candidate's qualifications and interview performance to compute scores and summaries:`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    systemInstruction: systemPrompt,
+  });
+
+  const content = result.response.text();
+  if (!content) throw new Error("Empty response from Gemini");
+
+  const cleanContent = cleanJsonContent(content);
+  const parsed = JSON.parse(cleanContent);
+
+  return {
+    technical_score: Math.min(100, Math.max(0, Number(parsed.technical_score) || 75)),
+    communication_score: Math.min(100, Math.max(0, Number(parsed.communication_score) || 75)),
+    experience_score: Math.min(100, Math.max(0, Number(parsed.experience_score) || 75)),
+    problem_solving_score: Math.min(100, Math.max(0, Number(parsed.problem_solving_score) || 75)),
+    culture_fit_score: Math.min(100, Math.max(0, Number(parsed.culture_fit_score) || 75)),
+    overall_score: Math.min(100, Math.max(0, Number(parsed.overall_score) || 75)),
+    recommendation: parsed.recommendation || "recommended",
+    recruiter_summary: parsed.recruiter_summary || "",
+    ai_rationale: parsed.ai_rationale || "",
+  };
 }
 
 /**
