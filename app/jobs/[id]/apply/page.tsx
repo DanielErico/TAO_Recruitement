@@ -34,30 +34,29 @@ export default function ApplyPage({
 
   // Check auth status and fetch profile details
   useEffect(() => {
-    const getCookie = (name: string) => {
-      const match = document.cookie.match(new RegExp(`(^| )${name}=([^;]+)`));
-      return match ? match[2] : null;
-    };
-    const role = getCookie("user_role");
-    const isCandidateUser = role === "candidate";
-    
-    // eslint-disable-next-line
-    setIsCandidate(isCandidateUser);
-
-    if (isCandidateUser) {
-      fetch("/api/candidate/profile")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.profile) {
-            setProfileResumeName(data.profile.resume_name || null);
-            setProfileResumeUrl(data.profile.resume_url || null);
-            if (data.profile.portfolio_url) {
-              setPortfolioUrl(data.profile.portfolio_url);
-            }
+    fetch("/api/candidate/profile")
+      .then((res) => {
+        if (res.status === 200) {
+          setIsCandidate(true);
+          return res.json();
+        } else {
+          setIsCandidate(false);
+          return null;
+        }
+      })
+      .then((data) => {
+        if (data && data.profile) {
+          setProfileResumeName(data.profile.resume_name || null);
+          setProfileResumeUrl(data.profile.resume_url || null);
+          if (data.profile.portfolio_url) {
+            setPortfolioUrl(data.profile.portfolio_url);
           }
-        })
-        .catch((err) => console.error("Error loading candidate profile:", err));
-    }
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading candidate profile:", err);
+        setIsCandidate(false);
+      });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {

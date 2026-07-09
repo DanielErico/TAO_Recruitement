@@ -189,18 +189,52 @@ async function extractDOCX(buffer: Buffer, fileName: string): Promise<CVExtracti
 // ── DOC (Legacy Word Binary) Extraction ─────────────────────────
 async function extractDOC(buffer: Buffer, fileName: string): Promise<CVExtractionResult> {
   try {
-    // @ts-ignore
-    const WordExtractorModule = await import("word-extractor");
-    const WordExtractor = (typeof WordExtractorModule === "function"
-      ? WordExtractorModule
-      : (WordExtractorModule.default || WordExtractorModule)) as any;
+    // Turbopack (used by `next dev`) transpiles ES6 class constructors in a way
+    // that breaks `word-extractor`'s class instantiation. To bypass this, we
+    // spawn a plain Node.js child process (doc-extractor-worker.js) that runs
+    // outside of Turbopack's module system entirely.
+    const { spawn } = await import("child_process");
+    const path = await import("path");
 
-    // Use Reflect.construct to instantiate the class, bypassing compiler ES5 downleveling of the 'new' keyword
-    const extractor = Reflect.construct(WordExtractor, []) as any;
-    const doc = await extractor.extract(buffer);
-    const rawText = doc.getBody() ?? "";
-    const cleaned = cleanText(rawText);
+    const workerPath = path.join(process.cwd(), "lib", "doc-extractor-worker.js");
 
+    const result = await new Promise<{ success: boolean; text?: string; error?: string }>(
+      (resolve, reject) => {
+        const child = spawn(process.execPath, [workerPath], {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        let stdout = "";
+        let stderr = "";
+
+        child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
+        child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+        child.on("close", (code: number) => {
+          if (code !== 0 && !stdout) {
+            reject(new Error(`Worker exited with code ${code}: ${stderr}`));
+          } else {
+            try {
+              resolve(JSON.parse(stdout));
+            } catch {
+              reject(new Error(`Failed to parse worker output: ${stdout}`));
+            }
+          }
+        });
+
+        child.on("error", reject);
+
+        // Send buffer as base64 JSON via stdin
+        child.stdin.write(JSON.stringify({ base64: buffer.toString("base64") }));
+        child.stdin.end();
+      }
+    );
+
+    if (!result.success || !result.text) {
+      throw new Error(result.error || "Worker returned no text");
+    }
+
+    const cleaned = cleanText(result.text);
     console.log(`[CVExtractor] DOC extracted: ${cleaned.length} chars`);
 
     if (cleaned.length < MIN_TEXT_LENGTH) {
@@ -218,11 +252,12 @@ async function extractDOC(buffer: Buffer, fileName: string): Promise<CVExtractio
       charCount: cleaned.length,
     };
   } catch (err: any) {
-    console.error(`[CVExtractor] DOC extraction failed for ${fileName}:`, err.message);
+    console.error(`[CVExtractor] DOC extraction failed for ${fileName}:`, err.stack || err.message);
     return {
       text: "",
       status: "failed",
       error: `DOC text extraction failed: ${err.message}`,
+
       charCount: 0,
     };
   }

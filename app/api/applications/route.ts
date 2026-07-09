@@ -23,7 +23,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { cookies } from "next/headers";
 import { analyzeCV } from "@/lib/ai";
 import { extractCVText } from "@/lib/cv-extractor";
 import { EmailService } from "@/lib/email-service";
@@ -32,65 +31,46 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
-  const cookieUserId = cookieStore.get("mock_user_id")?.value;
-  const cookieEmail = cookieStore.get("mock_user_email")?.value ?? "";
+  // ── Auth: Use Supabase JWT session (works for all login methods) ──
+  const supabase = createAdminClient();
+  const { createClient: createAuthClient } = await import("@/lib/supabase/server");
+  const supabaseAuth = await createAuthClient();
+  const { data: { user } } = await supabaseAuth.auth.getUser();
 
-  if (!role || !cookieUserId) {
+  if (!user) {
     return NextResponse.json({ error: "Not logged in" }, { status: 401 });
   }
+
+  // Resolve role from user_metadata or user_profiles table
+  let role = user.user_metadata?.role as string | undefined;
+  if (!role) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role;
+  }
+
   if (role !== "candidate") {
     return NextResponse.json({ error: "Only candidates can apply for jobs." }, { status: 403 });
   }
 
-  const supabase = createAdminClient();
 
-  // ── 1. Resolve real candidate UUID ───────────────────────────
-  let candidateId = cookieUserId;
-
-  const { data: byId } = await supabase
-    .from("user_profiles")
-    .select("id")
-    .eq("id", cookieUserId)
-    .maybeSingle();
-
-  if (!byId) {
-    const { data: byEmail } = await supabase
-      .from("user_profiles")
-      .select("id")
-      .eq("email", cookieEmail)
-      .maybeSingle();
-
-    if (byEmail) {
-      candidateId = byEmail.id;
-    } else {
-      const { data: anyCandidate } = await supabase
-        .from("user_profiles")
-        .select("id")
-        .eq("role", "candidate")
-        .limit(1)
-        .maybeSingle();
-
-      if (!anyCandidate) {
-        return NextResponse.json(
-          { error: "No candidate profile found in database." },
-          { status: 400 }
-        );
-      }
-      candidateId = anyCandidate.id;
-    }
-  }
+  // ── 1. Resolve candidate identity from Supabase Auth ─────────
+  // The user is definitively identified by their JWT — use it directly.
+  const candidateId = user.id;
+  const authEmail = user.email ?? "";
 
   // ── Resolve candidate profile details for notifications ─────
-  const { data: profile } = await supabase
+  const { data: profileData } = await supabase
     .from("user_profiles")
     .select("full_name, email")
     .eq("id", candidateId)
     .maybeSingle();
 
-  const candidateName = profile?.full_name || "Candidate";
-  const candidateEmail = profile?.email || cookieEmail;
+  const candidateName = profileData?.full_name || "Candidate";
+  const candidateEmail = profileData?.email || authEmail;
 
   try {
     // ── 2. Parse form data ──────────────────────────────────────
@@ -373,6 +353,24 @@ export async function POST(request: NextRequest) {
         console.error("[Applications] Email notifications failed:", err.message);
       }
     }
+
+    // ── 8.6. Notify HR of new application ───────────────────────
+    const HR_EMAIL = process.env.HR_NOTIFICATION_EMAIL || "ochuko.munu@theagromall.com";
+    try {
+      await EmailService.sendHRNewApplication(
+        HR_EMAIL,
+        candidateName,
+        candidateEmail,
+        job.title,
+        aiAnalysis?.overall_score ?? 0,
+        applicationStatus,
+        application.id
+      );
+    } catch (err: any) {
+      // Non-blocking — never fail the application submission because of HR email
+      console.error("[Applications] HR notification email failed:", err.message);
+    }
+
 
     // ── 9. Return result ────────────────────────────────────────
     return NextResponse.json({

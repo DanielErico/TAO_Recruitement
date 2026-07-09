@@ -16,7 +16,8 @@ import {
   getInterviewInviteHtml, 
   getShortlistHtml, 
   getRejectionHtml,
-  getOfferExtendedHtml
+  getOfferExtendedHtml,
+  getHRNewApplicationHtml
 } from "./emails";
 
 const apiKey = process.env.RESEND_API_KEY;
@@ -125,6 +126,32 @@ export class EmailService {
   public static async sendOfferExtended(to: string, candidateName: string, jobTitle: string): Promise<boolean> {
     const html = getOfferExtendedHtml({ candidateName, jobTitle });
     return this.sendEmail(to, `Job Offer Extended — ${jobTitle}`, html);
+  }
+
+  /**
+   * 6. HR New Application Notification
+   * Fires whenever a candidate submits an application. Notifies HR instantly.
+   */
+  public static async sendHRNewApplication(
+    hrEmail: string,
+    candidateName: string,
+    candidateEmail: string,
+    jobTitle: string,
+    fitScore: number,
+    applicationStatus: string,
+    applicationId: string
+  ): Promise<boolean> {
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const applicationUrl = `${appUrl}/recruiter/applications/${applicationId}`;
+    const html = getHRNewApplicationHtml({
+      candidateName,
+      candidateEmail,
+      jobTitle,
+      fitScore,
+      applicationStatus,
+      applicationUrl,
+    });
+    return this.sendEmail(hrEmail, `New Application: ${candidateName} → ${jobTitle}`, html);
   }
 }
 export default EmailService;

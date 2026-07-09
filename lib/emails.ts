@@ -145,3 +145,49 @@ export function getOfferExtendedHtml({ candidateName, jobTitle }: TemplateData):
   return wrapTemplate(`Job Offer Extended`, body);
 }
 
+/**
+ * 6. HR New Application Notification Template
+ * Sent to HR / recruiter email whenever a candidate submits an application.
+ */
+interface HRNotificationData {
+  candidateName: string;
+  candidateEmail: string;
+  jobTitle: string;
+  fitScore: number;
+  applicationStatus: string;
+  applicationUrl: string;
+}
+
+export function getHRNewApplicationHtml({
+  candidateName,
+  candidateEmail,
+  jobTitle,
+  fitScore,
+  applicationStatus,
+  applicationUrl,
+}: HRNotificationData): string {
+  const statusBadge =
+    applicationStatus === "interview"
+      ? `<span style="background-color:#E8F5EE;color:#046C44;font-size:12px;font-weight:700;padding:3px 10px;border-radius:9999px;">Auto-Invited to Interview</span>`
+      : `<span style="background-color:#FEF9E7;color:#B7770D;font-size:12px;font-weight:700;padding:3px 10px;border-radius:9999px;">In Screening</span>`;
+
+  const scoreColor = fitScore >= 75 ? "#046C44" : fitScore >= 50 ? "#B7770D" : "#C0392B";
+
+  const body = `
+    A new candidate has submitted an application on the TAO Recruit AI platform.<br/><br/>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:8px 0;color:#9CA3AF;width:40%;">Candidate Name</td><td style="padding:8px 0;color:#0D1F17;font-weight:600;">${candidateName}</td></tr>
+      <tr><td style="padding:8px 0;color:#9CA3AF;">Email</td><td style="padding:8px 0;color:#0D1F17;">${candidateEmail}</td></tr>
+      <tr><td style="padding:8px 0;color:#9CA3AF;">Applied For</td><td style="padding:8px 0;color:#0D1F17;font-weight:600;">${jobTitle}</td></tr>
+      <tr><td style="padding:8px 0;color:#9CA3AF;">AI Fit Score</td><td style="padding:8px 0;color:${scoreColor};font-weight:700;font-size:16px;">${fitScore}/100</td></tr>
+      <tr><td style="padding:8px 0;color:#9CA3AF;">Status</td><td style="padding:8px 0;">${statusBadge}</td></tr>
+    </table><br/>
+    Click the button below to review the candidate's full CV analysis and details.
+  `;
+  return wrapTemplate(`New Application Received`, body, {
+    label: "View Candidate Application",
+    url: applicationUrl,
+  });
+}
+
+
