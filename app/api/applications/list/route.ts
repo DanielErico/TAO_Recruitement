@@ -31,8 +31,21 @@ export async function GET(request: NextRequest) {
   );
 
   const { data: { user } } = await supabaseAuth.auth.getUser();
-  const cookieRole = cookieStore.get("user_role")?.value;
-  const role = user?.user_metadata?.role || (user ? cookieRole : null) || "candidate";
+  let role = user?.user_metadata?.role as string | undefined;
+
+  if (user && !role) {
+    const supabase = createAdminClient();
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role;
+  }
+
+  if (!role && user) {
+    role = cookieStore.get("user_role")?.value || "candidate";
+  }
 
   if (!user || !role || !["recruiter", "admin"].includes(role)) {
     return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });

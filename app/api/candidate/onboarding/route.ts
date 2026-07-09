@@ -5,16 +5,32 @@ import { createAdminClient } from "@/lib/supabase/admin";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  // ── 1. Auth check ──────────────────────────────────────────
-  const cookieStore = await cookies();
-  const candidateId = cookieStore.get("mock_user_id")?.value;
-  const role = cookieStore.get("user_role")?.value;
+  // ── 1. Auth check using Supabase Auth ───────────────────────
+  const supabase = createAdminClient();
+  const { createClient: createAuthClient } = await import("@/lib/supabase/server");
+  const supabaseAuth = await createAuthClient();
+  const { data: { user } } = await supabaseAuth.auth.getUser();
 
-  if (!candidateId || role !== "candidate") {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const supabase = createAdminClient();
+  // Resolve role from user_metadata or user_profiles table
+  let role = user.user_metadata?.role as string | undefined;
+  if (!role) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role;
+  }
+
+  if (role !== "candidate") {
+    return NextResponse.json({ error: "Only candidates can perform onboarding." }, { status: 403 });
+  }
+
+  const candidateId = user.id;
 
   try {
     // ── 2. Parse form data ──────────────────────────────────────
@@ -94,6 +110,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update the mock name cookie to match the new name
+    const cookieStore = await cookies();
     cookieStore.set("mock_user_name", fullName, { maxAge: 604800, path: "/" });
 
     // ── 5. Upsert candidate_profiles ────────────────────────────

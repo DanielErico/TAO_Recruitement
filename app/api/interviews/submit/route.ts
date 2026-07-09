@@ -7,13 +7,26 @@ import { evaluateInterview } from "@/lib/ai";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
-  const userId = cookieStore.get("mock_user_id")?.value;
+  const supabase = createAdminClient();
+  const { createClient: createAuthClient } = await import("@/lib/supabase/server");
+  const supabaseAuth = await createAuthClient();
+  const { data: { user } } = await supabaseAuth.auth.getUser();
 
-  if (!role || !userId) {
+  if (!user) {
     return NextResponse.json({ error: "Unauthorized access" }, { status: 401 });
   }
+
+  let role = user.user_metadata?.role as string | undefined;
+  if (!role) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role;
+  }
+
+  const userId = user.id;
 
   try {
     const body = await request.json();

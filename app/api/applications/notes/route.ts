@@ -3,8 +3,24 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const role = cookieStore.get("user_role")?.value;
+  const { createClient } = await import("@/lib/supabase/server");
+  const supabaseAuth = await createClient();
+  const { data: { user } } = await supabaseAuth.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const supabase = createAdminClient();
+  let role = user.user_metadata?.role as string | undefined;
+  if (!role) {
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    role = profile?.role;
+  }
 
   if (!role || !["recruiter", "admin"].includes(role)) {
     return NextResponse.json({ error: "Unauthorized access" }, { status: 403 });

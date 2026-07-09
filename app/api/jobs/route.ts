@@ -52,6 +52,15 @@ export async function POST(request: NextRequest) {
     const { data: { user } } = await supabaseSession.auth.getUser();
     if (user) {
       role = user.user_metadata?.role;
+      if (!role) {
+        const supabase = createAdminClient();
+        const { data: profile } = await supabase
+          .from("user_profiles")
+          .select("role")
+          .eq("id", user.id)
+          .maybeSingle();
+        role = profile?.role;
+      }
       resolvedUserId = user.id;
     }
   } catch (err) {
