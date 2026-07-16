@@ -40,6 +40,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const finalTranscriptRef = useRef("");
 
   // Keep refs of state to use in SpeechRecognition callback without re-binding
   const isListeningRef = useRef(isListening);
@@ -98,6 +99,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       });
     }
 
+    finalTranscriptRef.current = "";
     submitInterview(finalAnswers);
   }
 
@@ -130,6 +132,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
         response: "[INTERVIEW TERMINATED] The candidate switched tabs during this question. The interview was forced to end and submit."
       });
 
+      finalTranscriptRef.current = "";
       submitInterview(finalAnswers, true);
     }
   };
@@ -159,12 +162,25 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       rec.lang = "en-US";
 
       rec.onresult = (event: any) => {
-        let textResult = "";
-        for (let i = 0; i < event.results.length; i++) {
-          textResult += event.results[i][0].transcript;
+        let interimTranscript = "";
+        let newFinalTranscript = "";
+        
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const result = event.results[i];
+          if (result.isFinal) {
+            newFinalTranscript += result[0].transcript;
+          } else {
+            interimTranscript += result[0].transcript;
+          }
         }
-        if (textResult) {
-          setCurrentInput(textResult);
+        
+        if (newFinalTranscript) {
+          finalTranscriptRef.current += newFinalTranscript;
+        }
+        
+        const fullTranscript = finalTranscriptRef.current + interimTranscript;
+        if (fullTranscript) {
+          setCurrentInput(fullTranscript);
         }
       };
 
@@ -280,6 +296,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setMessages((prev) => [...prev, { sender: "candidate", text }]);
     setCurrentInput("");
     stopListening();
+    finalTranscriptRef.current = "";
 
     // Determine the question being answered
     const aiMessages = messages.filter((m) => m.sender === "ai");
@@ -432,6 +449,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setStartTime(new Date());
     setMode("chat");
     setGlobalTimeLeft(300); // Reset global timer
+    finalTranscriptRef.current = "";
     fetchNextQuestion(0, [], 300);
   }
 
