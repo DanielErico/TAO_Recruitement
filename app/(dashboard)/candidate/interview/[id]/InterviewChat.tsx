@@ -39,14 +39,20 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(300); // 5 minutes in seconds
   const [speechSupported, setSpeechSupported] = useState<boolean | null>(null);
 
-  // Detect iOS/Safari for platform-specific behaviour
-  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isSafari = typeof navigator !== "undefined" && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-  const isMobileSafari = isIOS || isSafari;
+  // Detect iOS/Safari ONCE on mount via a ref — avoids SSR issues (navigator is
+  // undefined on the server) and prevents re-computation on every render.
+  const isMobileSafariRef = useRef(false);
+  useEffect(() => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    isMobileSafariRef.current = ios || safari;
+  }, []);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const finalTranscriptRef = useRef("");
+  // Prevents iOS ghost onClick from double-firing toggleListening after onTouchEnd
+  const touchHandledRef = useRef(false);
 
   // Keep refs of state to use in SpeechRecognition callback without re-binding
   const isListeningRef = useRef(isListening);
@@ -91,17 +97,18 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setMode("submitting");
     const finalSpeech = currentInputRef.current.trim();
     let finalAnswers = [...answersRef.current];
-    
+
     if (finalSpeech) {
-      const aiMessages = messages.filter((m) => m.sender === "ai");
+      // Use messagesRef (not messages) to avoid stale closure in timer callback
+      const aiMessages = messagesRef.current.filter((m) => m.sender === "ai");
       const currentQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].text : "Introduction";
       finalAnswers.push({ question: currentQuestion, response: finalSpeech });
     }
-    
+
     if (finalAnswers.length === 0) {
-      finalAnswers.push({ 
-        question: "Introduction", 
-        response: "(No responses recorded within the 5-minute time limit)" 
+      finalAnswers.push({
+        question: "Introduction",
+        response: "(No responses recorded within the 5-minute time limit)"
       });
     }
 
@@ -164,12 +171,14 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     if (SpeechRecognition) {
       setSpeechSupported(true);
       const rec = new SpeechRecognition();
+      // Read from ref (set by the detection useEffect above)
+      const onMobileSafari = isMobileSafariRef.current;
 
       // iOS/Safari does NOT support continuous mode reliably:
       // with continuous=true, the mic silently freezes on iOS.
       // Instead we set continuous=false on mobile Safari and
       // manually restart after each result in onend.
-      rec.continuous = !isMobileSafari;
+      rec.continuous = !onMobileSafari;
       rec.interimResults = true;
       rec.lang = "en-US";
 
@@ -181,7 +190,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
           const result = event.results[i];
           // isFinal is sometimes inconsistent on iOS Safari — treat
           // all results as final on mobile as a safe fallback.
-          const treatAsFinal = result.isFinal || isMobileSafari;
+          const treatAsFinal = result.isFinal || onMobileSafari;
           if (treatAsFinal) {
             newFinalTranscript += result[0].transcript;
           } else {
@@ -200,23 +209,29 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       };
 
       rec.onerror = (event: any) => {
-        console.error("Speech recognition error:", event.error);
         if (event.error === "not-allowed") {
-          const iosHint = isMobileSafari
+          const iosHint = onMobileSafari
             ? " On iPhone/iPad: go to Settings → Safari → Microphone and allow access. Also ensure Siri is enabled in Settings → Siri & Search."
             : "";
           setError(`Microphone permission was denied. Please allow microphone access in your browser settings.${iosHint}`);
           setIsListening(false);
+          console.error("Speech recognition error: not-allowed");
         } else if (event.error === "no-speech") {
-          // On iOS this fires frequently — silently restart instead of stopping
-          if (isMobileSafari && isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
+          // "no-speech" is normal — fires when there's silence. Never show as error.
+          // On iOS, proactively restart since continuous=false stops after silence.
+          if (onMobileSafari && isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
             setTimeout(() => {
               try { rec.start(); } catch (e) {}
             }, 150);
           }
         } else if (event.error === "aborted") {
-          // iOS fires 'aborted' when we call stop() — this is expected, ignore it
+          // "aborted" fires when rec.stop() is called (e.g. when AI starts replying).
+          // stopListening() already calls setIsListening(false) before rec.stop(),
+          // so state is already correct — just log a warning, no state change needed.
+          console.warn("Speech recognition aborted (expected when stopping).");
         } else {
+          // Unexpected error — log it and reset mic state
+          console.error("Speech recognition error:", event.error);
           setIsListening(false);
         }
       };
@@ -225,7 +240,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
         // iOS stops after every utterance (continuous=false).
         // Use a short delay before restarting to avoid InvalidStateError.
         if (isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
-          const delay = isMobileSafari ? 200 : 0;
+          const delay = onMobileSafari ? 200 : 0;
           setTimeout(() => {
             try {
               rec.start();
@@ -239,7 +254,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       recognitionRef.current = rec;
     } else {
       setSpeechSupported(false);
-      const iosMsg = isIOS
+      const iosMsg = isMobileSafariRef.current
         ? "Please open this page in the Safari browser app on your iPhone or iPad to use voice input."
         : "Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.";
       setError(iosMsg);
@@ -720,13 +735,23 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             </div>
 
             {/* Toggle Mic Button */}
-            {/* onTouchEnd is added alongside onClick for iOS Safari — iOS sometimes
-                does not fire onClick reliably on rounded buttons inside forms.
-                preventDefault stops the ghost click that would double-fire. */}
+            {/* onTouchEnd fires on iOS Safari before onClick. We set a flag in
+                onTouchEnd so the subsequent ghost onClick is a no-op, preventing
+                toggleListening from firing twice on mobile. */}
             <Button
               type="button"
-              onClick={toggleListening}
-              onTouchEnd={(e) => { e.preventDefault(); toggleListening(); }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                touchHandledRef.current = true;
+                toggleListening();
+              }}
+              onClick={() => {
+                if (touchHandledRef.current) {
+                  touchHandledRef.current = false;
+                  return; // Skip — already handled by onTouchEnd on mobile
+                }
+                toggleListening();
+              }}
               disabled={isAiTyping}
               variant={isListening ? "destructive" : "outline"}
               className={`h-12 w-12 rounded-full p-0 flex items-center justify-center shrink-0 shadow-sm transition-all touch-manipulation ${
