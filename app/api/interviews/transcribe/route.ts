@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const mimeType = file.type || "audio/webm";
+    // Strip parameters like ;codecs=opus to prevent Gemini API validation errors
+    const mimeType = (file.type || "audio/webm").split(";")[0].trim();
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
