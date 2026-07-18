@@ -46,6 +46,22 @@ export async function middleware(request: NextRequest) {
   const role = user?.user_metadata?.role || (user ? cookieRole : null) || "candidate";
   const isAuthenticated = !!user;
 
+  // Helper to create a redirect response that preserves refreshed Supabase session cookies
+  function redirectWithCookies(dest: string) {
+    const redirectResponse = NextResponse.redirect(new URL(dest, request.url));
+    response.cookies.getAll().forEach((cookie) => {
+      redirectResponse.cookies.set(cookie.name, cookie.value, {
+        path: cookie.path,
+        domain: cookie.domain,
+        maxAge: cookie.maxAge,
+        secure: cookie.secure,
+        sameSite: cookie.sameSite,
+        expires: cookie.expires,
+      });
+    });
+    return redirectResponse;
+  }
+
   // 1. Redirect authenticated users away from auth pages
   if (isAuthenticated && (pathname.startsWith("/login") || pathname.startsWith("/register"))) {
     const dest =
@@ -54,7 +70,7 @@ export async function middleware(request: NextRequest) {
         : role === "recruiter"
         ? "/recruiter"
         : "/candidate";
-    return NextResponse.redirect(new URL(dest, request.url));
+    return redirectWithCookies(dest);
   }
 
   // 2. Protect dashboard routes
@@ -68,7 +84,7 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith(prefix)) {
       // Not logged in -> send to login
       if (!isAuthenticated) {
-        const redirectResponse = NextResponse.redirect(new URL("/login", request.url));
+        const redirectResponse = redirectWithCookies("/login");
         redirectResponse.cookies.delete("user_role");
         return redirectResponse;
       }
@@ -83,7 +99,7 @@ export async function middleware(request: NextRequest) {
             : "/candidate";
 
         if (!pathname.startsWith(dest)) {
-          return NextResponse.redirect(new URL(dest, request.url));
+          return redirectWithCookies(dest);
         }
       }
       break;
