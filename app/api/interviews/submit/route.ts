@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { evaluateInterview } from "@/lib/ai";
+import { EmailService } from "@/lib/email-service";
 
 
 export const dynamic = "force-dynamic";
@@ -225,6 +226,38 @@ export async function POST(request: NextRequest) {
     if (statusError) {
       console.error("Application status update failed:", statusError);
       throw new Error(`Application status update failed: ${statusError.message}`);
+    }
+
+    // ── 5.5. Send email notification to HR (non-blocking) ──
+    try {
+      const { data: profile } = await supabase
+        .from("user_profiles")
+        .select("full_name, email")
+        .eq("id", candidateId)
+        .single();
+
+      if (profile) {
+        const HR_EMAIL = process.env.HR_NOTIFICATION_EMAIL || "ochuko.munu@theagromall.com";
+        const origin = request.nextUrl.origin;
+        await EmailService.sendHRInterviewCompleted(
+          HR_EMAIL,
+          profile.full_name || "Candidate",
+          profile.email,
+          jobTitle,
+          evaluation.overall_score,
+          evaluation.technical_score,
+          evaluation.communication_score,
+          evaluation.experience_score,
+          evaluation.problem_solving_score,
+          evaluation.culture_fit_score,
+          evaluation.recommendation,
+          switchedTabs,
+          applicationId,
+          origin
+        );
+      }
+    } catch (emailErr: any) {
+      console.error("[Submit Route] Failed to send HR interview completion email:", emailErr.message);
     }
 
     return NextResponse.json({ success: true });

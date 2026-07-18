@@ -190,4 +190,90 @@ export function getHRNewApplicationHtml({
   });
 }
 
+/**
+ * 7. HR Interview Completed Notification Template
+ */
+interface HRInterviewCompletedData {
+  candidateName: string;
+  candidateEmail: string;
+  jobTitle: string;
+  overallScore: number;
+  technicalScore: number;
+  communicationScore: number;
+  experienceScore: number;
+  problemSolvingScore: number;
+  cultureFitScore: number;
+  recommendation: string;
+  switchedTabs: boolean;
+  applicationUrl: string;
+}
+
+export function getHRInterviewCompletedHtml({
+  candidateName,
+  candidateEmail,
+  jobTitle,
+  overallScore,
+  technicalScore,
+  communicationScore,
+  experienceScore,
+  problemSolvingScore,
+  cultureFitScore,
+  recommendation,
+  switchedTabs,
+  applicationUrl,
+}: HRInterviewCompletedData): string {
+  const formattedRec = recommendation
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
+  const recColor =
+    recommendation === "highly_recommended"
+      ? "#046C44"
+      : recommendation === "recommended"
+      ? "#27AE60"
+      : recommendation === "consider"
+      ? "#D35400"
+      : "#C0392B";
+
+  const recBadge = `<span style="background-color:${recColor}15;color:${recColor};font-size:12px;font-weight:700;padding:4px 12px;border-radius:9999px;border:1px solid ${recColor}30;">${formattedRec}</span>`;
+
+  const integrityAlert = switchedTabs
+    ? `<div style="background-color: #FDEDEC; border-left: 4px solid #C0392B; padding: 16px; border-radius: 4px; margin-bottom: 24px; color: #922B21; font-size: 14px; font-weight: 600;">
+         ⚠️ INTEGRITY WARNING: Tab switching or window blur was detected during the interview! The interview was automatically submitted and the scores were penalized.
+       </div>`
+    : "";
+
+  const scoreColor = overallScore >= 75 ? "#046C44" : overallScore >= 50 ? "#B7770D" : "#C0392B";
+
+  const body = `
+    ${integrityAlert}
+    A candidate has completed their AI voice screening interview on the TAO Recruit AI platform.<br/><br/>
+    
+    <strong style="color: #0D1F17; font-size: 16px;">Candidate Profile</strong>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;border-bottom:1px solid #F2F4F3;">
+      <tr><td style="padding:6px 0;color:#9CA3AF;width:40%;">Candidate Name</td><td style="padding:6px 0;color:#0D1F17;font-weight:600;">${candidateName}</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Email</td><td style="padding:6px 0;color:#0D1F17;">${candidateEmail}</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Applied For</td><td style="padding:6px 0;color:#0D1F17;font-weight:600;">${jobTitle}</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Recommendation</td><td style="padding:6px 0;">${recBadge}</td></tr>
+    </table>
+
+    <strong style="color: #0D1F17; font-size: 16px;">AI Evaluation Summary</strong>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:6px 0;color:#9CA3AF;width:40%;">Overall Fit Score</td><td style="padding:6px 0;color:${scoreColor};font-weight:700;font-size:16px;">${overallScore}/100</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Technical Proficiency</td><td style="padding:6px 0;color:#0D1F17;">${technicalScore}/100</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Communication Skills</td><td style="padding:6px 0;color:#0D1F17;">${communicationScore}/100</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Role Experience</td><td style="padding:6px 0;color:#0D1F17;">${experienceScore}/100</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Problem Solving</td><td style="padding:6px 0;color:#0D1F17;">${problemSolvingScore}/100</td></tr>
+      <tr><td style="padding:6px 0;color:#9CA3AF;">Culture Fit</td><td style="padding:6px 0;color:#0D1F17;">${cultureFitScore}/100</td></tr>
+    </table><br/>
+    Click below to read the full AI rationale, recruiter notes, and transcript.
+  `;
+
+  return wrapTemplate(`Voice Interview Concluded`, body, {
+    label: "View Candidate Application",
+    url: applicationUrl,
+  });
+}
+
 

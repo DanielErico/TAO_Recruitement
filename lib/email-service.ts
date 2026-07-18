@@ -17,7 +17,8 @@ import {
   getShortlistHtml, 
   getRejectionHtml,
   getOfferExtendedHtml,
-  getHRNewApplicationHtml
+  getHRNewApplicationHtml,
+  getHRInterviewCompletedHtml
 } from "./emails";
 
 const apiKey = process.env.RESEND_API_KEY;
@@ -160,6 +161,45 @@ export class EmailService {
       applicationUrl,
     });
     return this.sendEmail(hrEmail, `New Application: ${candidateName} → ${jobTitle}`, html);
+  }
+
+  /**
+   * 7. HR Interview Completed Notification
+   * Notifies HR instantly when a candidate concludes their voice interview.
+   */
+  public static async sendHRInterviewCompleted(
+    hrEmail: string,
+    candidateName: string,
+    candidateEmail: string,
+    jobTitle: string,
+    overallScore: number,
+    technicalScore: number,
+    communicationScore: number,
+    experienceScore: number,
+    problemSolvingScore: number,
+    cultureFitScore: number,
+    recommendation: string,
+    switchedTabs: boolean,
+    applicationId: string,
+    appUrlOrigin?: string
+  ): Promise<boolean> {
+    const baseUrl = appUrlOrigin || appUrl;
+    const applicationUrl = `${baseUrl}/recruiter/applications/${applicationId}`;
+    const html = getHRInterviewCompletedHtml({
+      candidateName,
+      candidateEmail,
+      jobTitle,
+      overallScore,
+      technicalScore,
+      communicationScore,
+      experienceScore,
+      problemSolvingScore,
+      cultureFitScore,
+      recommendation,
+      switchedTabs,
+      applicationUrl,
+    });
+    return this.sendEmail(hrEmail, `Interview Concluded: ${candidateName} — ${jobTitle}`, html);
   }
 }
 export default EmailService;
