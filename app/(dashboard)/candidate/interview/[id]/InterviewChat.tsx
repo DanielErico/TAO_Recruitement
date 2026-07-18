@@ -51,6 +51,11 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
   const finalTranscriptRef = useRef("");
+  // On iOS (continuous=false), tracks the current phrase in progress.
+  // Only committed to finalTranscriptRef when onend fires (phrase complete).
+  // This prevents the exponential repetition caused by interim results updating
+  // the same result in place while we were treating them all as 'final'.
+  const iosCurrentPhraseRef = useRef("");
   // Prevents iOS ghost onClick from double-firing toggleListening after onTouchEnd
   const touchHandledRef = useRef(false);
 
@@ -113,6 +118,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     }
 
     finalTranscriptRef.current = "";
+    iosCurrentPhraseRef.current = "";
     submitInterview(finalAnswers);
   }
 
@@ -146,6 +152,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       });
 
       finalTranscriptRef.current = "";
+      iosCurrentPhraseRef.current = "";
       submitInterview(finalAnswers, true);
     }
   };
@@ -181,30 +188,43 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       rec.continuous = !onMobileSafari;
       rec.interimResults = true;
       rec.lang = "en-US";
-
+      
       rec.onresult = (event: any) => {
-        let interimTranscript = "";
-        let newFinalTranscript = "";
+        if (onMobileSafari) {
+          // iOS/Safari fires multiple onresult events for the SAME phrase as it
+          // refines its transcript (resultIndex stays 0, same result updates in place).
+          // Accumulating these into finalTranscriptRef causes exponential repetition.
+          // Fix: treat the latest transcript as the "current phrase in progress" only.
+          // It gets committed to finalTranscriptRef once in onend (phrase complete).
+          const latest = event.results[event.results.length - 1][0].transcript;
+          iosCurrentPhraseRef.current = latest;
+          const display = finalTranscriptRef.current
+            ? finalTranscriptRef.current + " " + latest
+            : latest;
+          setCurrentInput(display.trim());
+        } else {
+          // Desktop / Android Chrome: use resultIndex to process only NEW results.
+          // isFinal correctly marks phrase boundaries here.
+          let newFinalTranscript = "";
+          let interimTranscript = "";
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const result = event.results[i];
-          // isFinal is sometimes inconsistent on iOS Safari — treat
-          // all results as final on mobile as a safe fallback.
-          const treatAsFinal = result.isFinal || onMobileSafari;
-          if (treatAsFinal) {
-            newFinalTranscript += result[0].transcript;
-          } else {
-            interimTranscript += result[0].transcript;
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              newFinalTranscript += result[0].transcript;
+            } else {
+              interimTranscript += result[0].transcript;
+            }
           }
-        }
 
-        if (newFinalTranscript) {
-          finalTranscriptRef.current += newFinalTranscript;
-        }
+          if (newFinalTranscript) {
+            finalTranscriptRef.current += newFinalTranscript;
+          }
 
-        const fullTranscript = finalTranscriptRef.current + interimTranscript;
-        if (fullTranscript) {
-          setCurrentInput(fullTranscript);
+          const fullTranscript = (finalTranscriptRef.current + interimTranscript).trim();
+          if (fullTranscript) {
+            setCurrentInput(fullTranscript);
+          }
         }
       };
 
@@ -217,37 +237,49 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
           setIsListening(false);
           console.error("Speech recognition error: not-allowed");
         } else if (event.error === "no-speech") {
-          // "no-speech" is normal — fires when there's silence. Never show as error.
-          // On iOS, proactively restart since continuous=false stops after silence.
-          if (onMobileSafari && isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
-            setTimeout(() => {
-              try { rec.start(); } catch (e) {}
-            }, 150);
-          }
+          // Normal silence event — onend will fire right after and handle restart.
+          // No action needed here for any platform.
         } else if (event.error === "aborted") {
-          // "aborted" fires when rec.stop() is called (e.g. when AI starts replying).
-          // stopListening() already calls setIsListening(false) before rec.stop(),
-          // so state is already correct — just log a warning, no state change needed.
+          // Fires when rec.stop() is called. State already updated by stopListening().
           console.warn("Speech recognition aborted (expected when stopping).");
         } else {
-          // Unexpected error — log it and reset mic state
           console.error("Speech recognition error:", event.error);
           setIsListening(false);
         }
       };
 
       rec.onend = () => {
-        // iOS stops after every utterance (continuous=false).
-        // Use a short delay before restarting to avoid InvalidStateError.
-        if (isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
-          const delay = onMobileSafari ? 200 : 0;
+        const shouldRestart =
+          isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current;
+
+        if (onMobileSafari && shouldRestart) {
+          // iOS: onend means the current phrase is complete. Commit it to finals
+          // before restarting so the next phrase appends cleanly.
+          const phrase = iosCurrentPhraseRef.current.trim();
+          if (phrase) {
+            finalTranscriptRef.current = finalTranscriptRef.current
+              ? finalTranscriptRef.current + " " + phrase
+              : phrase;
+          }
+          iosCurrentPhraseRef.current = "";
+        } else if (onMobileSafari && !shouldRestart) {
+          // Being stopped for submission — clear without committing (sendAnswer
+          // already captured the displayed text as the answer).
+          iosCurrentPhraseRef.current = "";
+        }
+
+        if (shouldRestart) {
+          // Use 300ms delay on all platforms:
+          // - iOS: prevents InvalidStateError on rapid restart
+          // - Android: prevents re-processing of recently buffered mic audio
+          //   which can cause the previous phrase to appear duplicated
           setTimeout(() => {
             try {
               rec.start();
             } catch (e) {
               console.warn("Failed to restart speech recognition:", e);
             }
-          }, delay);
+          }, 300);
         }
       };
 
@@ -349,6 +381,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setCurrentInput("");
     stopListening();
     finalTranscriptRef.current = "";
+    iosCurrentPhraseRef.current = "";
 
     // Determine the question being answered
     const aiMessages = messages.filter((m) => m.sender === "ai");
