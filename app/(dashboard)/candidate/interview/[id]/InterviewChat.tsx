@@ -178,8 +178,12 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     if (SpeechRecognition) {
       setSpeechSupported(true);
       const rec = new SpeechRecognition();
-      // Read from ref (set by the detection useEffect above)
-      const onMobileSafari = isMobileSafariRef.current;
+      // Detect platform inline here (in addition to the ref above) to guarantee
+      // correctness regardless of useEffect execution order on mount.
+      const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+      const onMobileSafari = ios || safari;
+      isMobileSafariRef.current = onMobileSafari; // Keep ref in sync
 
       // iOS/Safari does NOT support continuous mode reliably:
       // with continuous=true, the mic silently freezes on iOS.
