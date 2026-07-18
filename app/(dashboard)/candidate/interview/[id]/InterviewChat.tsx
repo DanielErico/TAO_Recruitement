@@ -39,27 +39,13 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(300); // 5 minutes in seconds
   const [speechSupported, setSpeechSupported] = useState<boolean | null>(null);
 
-  // Detect iOS/Safari ONCE on mount via a ref — avoids SSR issues (navigator is
-  // undefined on the server) and prevents re-computation on every render.
-  const isMobileSafariRef = useRef(false);
-  useEffect(() => {
-    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    isMobileSafariRef.current = ios || safari;
-  }, []);
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
-  const finalTranscriptRef = useRef("");
-  // On iOS (continuous=false), tracks the current phrase in progress.
-  // Only committed to finalTranscriptRef when onend fires (phrase complete).
-  // This prevents the exponential repetition caused by interim results updating
-  // the same result in place while we were treating them all as 'final'.
-  const iosCurrentPhraseRef = useRef("");
-  // Prevents iOS ghost onClick from double-firing toggleListening after onTouchEnd
-  const touchHandledRef = useRef(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
-  // Keep refs of state to use in SpeechRecognition callback without re-binding
+  // Keep refs of state to use in callbacks without re-binding
   const isListeningRef = useRef(isListening);
   const modeRef = useRef(mode);
   const isAiTypingRef = useRef(isAiTyping);
@@ -117,8 +103,10 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       });
     }
 
-    finalTranscriptRef.current = "";
-    iosCurrentPhraseRef.current = "";
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
     submitInterview(finalAnswers);
   }
 
@@ -151,8 +139,10 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
         response: "[INTERVIEW TERMINATED] The candidate switched tabs during this question. The interview was forced to end and submit."
       });
 
-      finalTranscriptRef.current = "";
-      iosCurrentPhraseRef.current = "";
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
       submitInterview(finalAnswers, true);
     }
   };
@@ -173,135 +163,21 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   }, [messages, isAiTyping]);
 
   // Initialize Speech Recognition
+  // Initialize Audio Recording Support check
   useEffect(() => {
-    // Detect platform before the SpeechRecognition check so both branches can use it.
-    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isAndroidDevice = /Android/i.test(navigator.userAgent);
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      setSpeechSupported(true);
-      const rec = new SpeechRecognition();
-      // Android Chrome with continuous=true behaves like iOS — it stops unexpectedly
-      // after each utterance and restarts, causing recently buffered audio to be
-      // re-captured in the new session, producing duplicate/repeated words.
-      // Apply the same continuous=false + phrase-commit-on-onend approach to both.
-      const onMobile = isIOSDevice || isAndroidDevice;
-      isMobileSafariRef.current = onMobile; // Keep ref in sync
-
-      // Use continuous=false on all mobile platforms (iOS + Android).
-      // Desktop Chrome/Edge/Safari: continuous=true works reliably.
-      rec.continuous = !onMobile;
-      rec.interimResults = true;
-      rec.lang = "en-US";
-      
-      rec.onresult = (event: any) => {
-        if (onMobile) {
-          // Mobile (iOS + Android): the speech engine fires multiple onresult
-          // events for the SAME phrase as it refines the transcript. resultIndex
-          // stays at 0 and the same result updates in place. Accumulating these
-          // into finalTranscriptRef causes exponential repetition.
-          // Fix: track only the latest version of the current phrase in a ref.
-          // It gets committed to finalTranscriptRef once per phrase in onend.
-          const latest = event.results[event.results.length - 1][0].transcript;
-          iosCurrentPhraseRef.current = latest;
-          const display = finalTranscriptRef.current
-            ? finalTranscriptRef.current + " " + latest
-            : latest;
-          setCurrentInput(display.trim());
-        } else {
-          // Desktop (Chrome/Edge/Safari): use resultIndex to process only new results.
-          // isFinal reliably marks phrase boundaries here.
-          let newFinalTranscript = "";
-          let interimTranscript = "";
-
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            const result = event.results[i];
-            if (result.isFinal) {
-              newFinalTranscript += result[0].transcript;
-            } else {
-              interimTranscript += result[0].transcript;
-            }
-          }
-
-          if (newFinalTranscript) {
-            finalTranscriptRef.current += newFinalTranscript;
-          }
-
-          const fullTranscript = (finalTranscriptRef.current + interimTranscript).trim();
-          if (fullTranscript) {
-            setCurrentInput(fullTranscript);
-          }
-        }
-      };
-
-      rec.onerror = (event: any) => {
-        if (event.error === "not-allowed") {
-          const hint = isIOSDevice
-            ? " On iPhone/iPad: go to Settings → Safari → Microphone and allow access. Also ensure Siri is enabled in Settings → Siri & Search."
-            : isAndroidDevice
-            ? " On Android: go to Settings → Apps → Chrome → Permissions → Microphone and allow access."
-            : "";
-          setError(`Microphone permission was denied. Please allow microphone access in your browser settings.${hint}`);
-          setIsListening(false);
-          console.error("Speech recognition error: not-allowed");
-        } else if (event.error === "no-speech") {
-          // Normal silence event — onend will fire right after and handle restart.
-        } else if (event.error === "aborted") {
-          // Fires when rec.stop() is called. State already updated by stopListening().
-          console.warn("Speech recognition aborted (expected when stopping).");
-        } else {
-          console.error("Speech recognition error:", event.error);
-          setIsListening(false);
-        }
-      };
-
-      rec.onend = () => {
-        const shouldRestart =
-          isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current;
-
-        if (onMobile && shouldRestart) {
-          // Mobile: onend means the current phrase is complete. Commit it cleanly
-          // to finalTranscriptRef before restarting for the next phrase.
-          const phrase = iosCurrentPhraseRef.current.trim();
-          if (phrase) {
-            finalTranscriptRef.current = finalTranscriptRef.current
-              ? finalTranscriptRef.current + " " + phrase
-              : phrase;
-          }
-          iosCurrentPhraseRef.current = "";
-        } else if (onMobile && !shouldRestart) {
-          // Being stopped for submission — sendAnswer already captured the text.
-          iosCurrentPhraseRef.current = "";
-        }
-
-        if (shouldRestart) {
-          setTimeout(() => {
-            try {
-              rec.start();
-            } catch (e) {
-              console.warn("Failed to restart speech recognition:", e);
-            }
-          }, 300);
-        }
-      };
-
-      recognitionRef.current = rec;
-    } else {
-      setSpeechSupported(false);
-      const msg = isIOSDevice
-        ? "Please open this page in the Safari browser app on your iPhone or iPad to use voice input."
-        : isAndroidDevice
-        ? "Please open this page in Chrome to use voice input on Android."
-        : "Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.";
-      setError(msg);
+    const isSupported =
+      typeof window !== "undefined" &&
+      navigator.mediaDevices &&
+      typeof MediaRecorder !== "undefined";
+    setSpeechSupported(isSupported);
+    if (!isSupported) {
+      setError("Audio recording is not supported in this browser. Please use Chrome, Safari, or Edge.");
     }
 
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+      // Clean up active streams on unmount
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
   }, []);
@@ -326,40 +202,101 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
 
   // Auto-start listening when AI stops typing, stop when AI is typing
   useEffect(() => {
-    if (mode === "chat" && !isAiTyping && recognitionRef.current) {
+    if (mode === "chat" && !isAiTyping) {
       startListening();
     } else {
       stopListening();
     }
   }, [isAiTyping, mode]);
 
-  function startListening() {
-    if (!recognitionRef.current) return;
+  async function startListening() {
+    if (isTranscribing || isAiTyping || isSubmittingRef.current) return;
+    setError(null);
+    audioChunksRef.current = [];
+
     try {
-      recognitionRef.current.start();
-      setIsListening(true);
-      setError(null);
-    } catch (e: any) {
-      // "InvalidStateError" means recognition is already running — safe to ignore
-      if (e?.name !== "InvalidStateError") {
-        console.warn("startListening error:", e);
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      let options = {};
+      if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+        options = { mimeType: "audio/webm;codecs=opus" };
+      } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+        options = { mimeType: "audio/webm" };
+      } else if (MediaRecorder.isTypeSupported("audio/ogg")) {
+        options = { mimeType: "audio/ogg" };
+      } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+        options = { mimeType: "audio/mp4" };
       }
+
+      const recorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        if (audioChunksRef.current.length === 0) return;
+
+        setIsTranscribing(true);
+        try {
+          const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+          const formData = new FormData();
+          formData.append("audio", audioBlob, "interview-response.webm");
+
+          const res = await fetch("/api/interviews/transcribe", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.error || "Failed to transcribe audio");
+          }
+
+          const data = await res.json();
+          const transcriptText = data.transcript || "";
+          
+          if (transcriptText) {
+            setCurrentInput(transcriptText);
+          }
+        } catch (e: any) {
+          console.error("Transcription error:", e);
+          setError("TAO AI was unable to transcribe your voice. Please try speaking again.");
+        } finally {
+          setIsTranscribing(false);
+          // Release microphone tracks
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((track) => track.stop());
+            streamRef.current = null;
+          }
+        }
+      };
+
+      recorder.start();
+      setIsListening(true);
+    } catch (e: any) {
+      console.error("Error starting recording:", e);
+      if (e?.name === "NotAllowedError" || e?.name === "PermissionDeniedError") {
+        setError("Microphone permission was denied. Please allow microphone access in your browser settings to speak your answers.");
+      } else {
+        setError("Could not access your microphone. Please check your recording device settings.");
+      }
+      setIsListening(false);
     }
   }
 
   function stopListening() {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.stop();
-      setIsListening(false);
-    } catch (e) {
-      // Already stopped — safe to ignore
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
     }
+    setIsListening(false);
   }
 
   function toggleListening() {
-    // On iOS, programmatic start() without a direct user gesture can be blocked.
-    // The onClick/onTouchEnd handlers below count as a gesture so this is safe.
     if (isListening) {
       stopListening();
     } else {
@@ -368,16 +305,92 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   }
 
   async function handleAutoSubmit() {
-    // Timer expired - submit whatever is captured so far
-    const finalSpeech = currentInput.trim() || "(No verbal response captured)";
-    await sendAnswer(finalSpeech);
+    if (isListening) {
+      setIsListening(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.onstop = async () => {
+          if (audioChunksRef.current.length > 0) {
+            setIsTranscribing(true);
+            try {
+              const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current!.mimeType });
+              const formData = new FormData();
+              formData.append("audio", audioBlob, "interview-response.webm");
+
+              const res = await fetch("/api/interviews/transcribe", {
+                method: "POST",
+                body: formData,
+              });
+
+              if (!res.ok) throw new Error("Transcription failed");
+              const data = await res.json();
+              const transcript = data.transcript || "(No verbal response captured)";
+              await sendAnswer(transcript);
+            } catch (e) {
+              console.error("Transcription error on auto-submit:", e);
+              await sendAnswer("(No verbal response captured)");
+            } finally {
+              setIsTranscribing(false);
+              if (streamRef.current) {
+                streamRef.current.getTracks().forEach((track) => track.stop());
+                streamRef.current = null;
+              }
+            }
+          } else {
+            await sendAnswer("(No verbal response captured)");
+          }
+        };
+        mediaRecorderRef.current.stop();
+      }
+    } else {
+      const finalSpeech = currentInput.trim() || "(No verbal response captured)";
+      await sendAnswer(finalSpeech);
+    }
   }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
-    if (isAiTyping || isPending) return;
-    const finalSpeech = currentInput.trim() || "(No verbal response captured)";
-    await sendAnswer(finalSpeech);
+    if (isAiTyping || isPending || isTranscribing) return;
+
+    if (isListening) {
+      setIsListening(false);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.onstop = async () => {
+          if (audioChunksRef.current.length > 0) {
+            setIsTranscribing(true);
+            try {
+              const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current!.mimeType });
+              const formData = new FormData();
+              formData.append("audio", audioBlob, "interview-response.webm");
+
+              const res = await fetch("/api/interviews/transcribe", {
+                method: "POST",
+                body: formData,
+              });
+
+              if (!res.ok) throw new Error("Transcription failed");
+              const data = await res.json();
+              const transcript = data.transcript || "(No verbal response captured)";
+              await sendAnswer(transcript);
+            } catch (e) {
+              console.error("Transcription error on send:", e);
+              await sendAnswer("(No verbal response captured)");
+            } finally {
+              setIsTranscribing(false);
+              if (streamRef.current) {
+                streamRef.current.getTracks().forEach((track) => track.stop());
+                streamRef.current = null;
+              }
+            }
+          } else {
+            await sendAnswer("(No verbal response captured)");
+          }
+        };
+        mediaRecorderRef.current.stop();
+      }
+    } else {
+      const finalSpeech = currentInput.trim() || "(No verbal response captured)";
+      await sendAnswer(finalSpeech);
+    }
   }
 
   async function sendAnswer(text: string) {
@@ -385,8 +398,6 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setMessages((prev) => [...prev, { sender: "candidate", text }]);
     setCurrentInput("");
     stopListening();
-    finalTranscriptRef.current = "";
-    iosCurrentPhraseRef.current = "";
 
     // Determine the question being answered
     const aiMessages = messages.filter((m) => m.sender === "ai");
@@ -539,7 +550,6 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     setStartTime(new Date());
     setMode("chat");
     setGlobalTimeLeft(300); // Reset global timer
-    finalTranscriptRef.current = "";
     fetchNextQuestion(0, [], 300);
   }
 
@@ -749,11 +759,17 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             {/* Pulsing visual soundwave when listening */}
             <div className="flex-1 relative">
               <Textarea
-                value={currentInput}
+                value={
+                  isTranscribing
+                    ? "Transcribing your voice... Please wait."
+                    : currentInput
+                }
                 readOnly
                 placeholder={
                   isAiTyping
                     ? "Please wait for AI response..."
+                    : isTranscribing
+                    ? "Processing audio transcript..."
                     : isListening
                     ? "Listening... Speak your answer now."
                     : "Tap the microphone to start speaking your answer..."
@@ -773,24 +789,10 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             </div>
 
             {/* Toggle Mic Button */}
-            {/* onTouchEnd fires on iOS Safari before onClick. We set a flag in
-                onTouchEnd so the subsequent ghost onClick is a no-op, preventing
-                toggleListening from firing twice on mobile. */}
             <Button
               type="button"
-              onTouchEnd={(e) => {
-                e.preventDefault();
-                touchHandledRef.current = true;
-                toggleListening();
-              }}
-              onClick={() => {
-                if (touchHandledRef.current) {
-                  touchHandledRef.current = false;
-                  return; // Skip — already handled by onTouchEnd on mobile
-                }
-                toggleListening();
-              }}
-              disabled={isAiTyping}
+              onClick={toggleListening}
+              disabled={isAiTyping || isTranscribing}
               variant={isListening ? "destructive" : "outline"}
               className={`h-12 w-12 rounded-full p-0 flex items-center justify-center shrink-0 shadow-sm transition-all touch-manipulation ${
                 isListening ? "mic-active-pulse" : "hover:bg-[var(--color-brand-light)] hover:text-[var(--color-brand)]"
