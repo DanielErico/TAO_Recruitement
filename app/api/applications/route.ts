@@ -347,7 +347,8 @@ export async function POST(request: NextRequest) {
 
         // 2. If status is 'interview' (due to auto-qualification fitScore >= 75), send invite
         if (applicationStatus === "interview") {
-          await EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id);
+          const origin = request.nextUrl.origin;
+          await EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id, origin);
         }
       } catch (err: any) {
         console.error("[Applications] Email notifications failed:", err.message);
@@ -357,6 +358,7 @@ export async function POST(request: NextRequest) {
     // ── 8.6. Notify HR of new application ───────────────────────
     const HR_EMAIL = process.env.HR_NOTIFICATION_EMAIL || "ochuko.munu@theagromall.com";
     try {
+      const origin = request.nextUrl.origin;
       await EmailService.sendHRNewApplication(
         HR_EMAIL,
         candidateName,
@@ -364,7 +366,8 @@ export async function POST(request: NextRequest) {
         job.title,
         aiAnalysis?.overall_score ?? 0,
         applicationStatus,
-        application.id
+        application.id,
+        origin
       );
     } catch (err: any) {
       // Non-blocking — never fail the application submission because of HR email

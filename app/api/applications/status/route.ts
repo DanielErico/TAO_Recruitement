@@ -79,7 +79,8 @@ export async function POST(request: NextRequest) {
           const jobTitle = job.title;
 
           if (status === "interview") {
-            await EmailService.sendInterviewInvite(candidateEmail, candidateName, jobTitle, applicationId);
+            const origin = request.nextUrl.origin;
+            await EmailService.sendInterviewInvite(candidateEmail, candidateName, jobTitle, applicationId, origin);
           } else if (status === "shortlisted") {
             await EmailService.sendShortlisted(candidateEmail, candidateName, jobTitle);
           } else if (status === "rejected") {

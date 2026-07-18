@@ -98,8 +98,15 @@ export class EmailService {
   /**
    * 2. AI Voice Interview Invitation Email
    */
-  public static async sendInterviewInvite(to: string, candidateName: string, jobTitle: string, applicationId: string): Promise<boolean> {
-    const actionUrl = `${appUrl}/candidate/interview/${applicationId}`;
+  public static async sendInterviewInvite(
+    to: string, 
+    candidateName: string, 
+    jobTitle: string, 
+    applicationId: string,
+    appUrlOrigin?: string
+  ): Promise<boolean> {
+    const baseUrl = appUrlOrigin || appUrl;
+    const actionUrl = `${baseUrl}/candidate/interview/${applicationId}`;
     const html = getInterviewInviteHtml({ candidateName, jobTitle, actionUrl });
     return this.sendEmail(to, `Invitation to Voice Interview — ${jobTitle}`, html);
   }
@@ -139,10 +146,11 @@ export class EmailService {
     jobTitle: string,
     fitScore: number,
     applicationStatus: string,
-    applicationId: string
+    applicationId: string,
+    appUrlOrigin?: string
   ): Promise<boolean> {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const applicationUrl = `${appUrl}/recruiter/applications/${applicationId}`;
+    const baseUrl = appUrlOrigin || appUrl;
+    const applicationUrl = `${baseUrl}/recruiter/applications/${applicationId}`;
     const html = getHRNewApplicationHtml({
       candidateName,
       candidateEmail,
