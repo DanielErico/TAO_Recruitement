@@ -174,32 +174,35 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
 
   // Initialize Speech Recognition
   useEffect(() => {
+    // Detect platform before the SpeechRecognition check so both branches can use it.
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroidDevice = /Android/i.test(navigator.userAgent);
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       setSpeechSupported(true);
       const rec = new SpeechRecognition();
-      // Detect platform inline here (in addition to the ref above) to guarantee
-      // correctness regardless of useEffect execution order on mount.
-      const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const safari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-      const onMobileSafari = ios || safari;
-      isMobileSafariRef.current = onMobileSafari; // Keep ref in sync
+      // Android Chrome with continuous=true behaves like iOS — it stops unexpectedly
+      // after each utterance and restarts, causing recently buffered audio to be
+      // re-captured in the new session, producing duplicate/repeated words.
+      // Apply the same continuous=false + phrase-commit-on-onend approach to both.
+      const onMobile = isIOSDevice || isAndroidDevice;
+      isMobileSafariRef.current = onMobile; // Keep ref in sync
 
-      // iOS/Safari does NOT support continuous mode reliably:
-      // with continuous=true, the mic silently freezes on iOS.
-      // Instead we set continuous=false on mobile Safari and
-      // manually restart after each result in onend.
-      rec.continuous = !onMobileSafari;
+      // Use continuous=false on all mobile platforms (iOS + Android).
+      // Desktop Chrome/Edge/Safari: continuous=true works reliably.
+      rec.continuous = !onMobile;
       rec.interimResults = true;
       rec.lang = "en-US";
       
       rec.onresult = (event: any) => {
-        if (onMobileSafari) {
-          // iOS/Safari fires multiple onresult events for the SAME phrase as it
-          // refines its transcript (resultIndex stays 0, same result updates in place).
-          // Accumulating these into finalTranscriptRef causes exponential repetition.
-          // Fix: treat the latest transcript as the "current phrase in progress" only.
-          // It gets committed to finalTranscriptRef once in onend (phrase complete).
+        if (onMobile) {
+          // Mobile (iOS + Android): the speech engine fires multiple onresult
+          // events for the SAME phrase as it refines the transcript. resultIndex
+          // stays at 0 and the same result updates in place. Accumulating these
+          // into finalTranscriptRef causes exponential repetition.
+          // Fix: track only the latest version of the current phrase in a ref.
+          // It gets committed to finalTranscriptRef once per phrase in onend.
           const latest = event.results[event.results.length - 1][0].transcript;
           iosCurrentPhraseRef.current = latest;
           const display = finalTranscriptRef.current
@@ -207,8 +210,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             : latest;
           setCurrentInput(display.trim());
         } else {
-          // Desktop / Android Chrome: use resultIndex to process only NEW results.
-          // isFinal correctly marks phrase boundaries here.
+          // Desktop (Chrome/Edge/Safari): use resultIndex to process only new results.
+          // isFinal reliably marks phrase boundaries here.
           let newFinalTranscript = "";
           let interimTranscript = "";
 
@@ -234,15 +237,16 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
 
       rec.onerror = (event: any) => {
         if (event.error === "not-allowed") {
-          const iosHint = onMobileSafari
+          const hint = isIOSDevice
             ? " On iPhone/iPad: go to Settings → Safari → Microphone and allow access. Also ensure Siri is enabled in Settings → Siri & Search."
+            : isAndroidDevice
+            ? " On Android: go to Settings → Apps → Chrome → Permissions → Microphone and allow access."
             : "";
-          setError(`Microphone permission was denied. Please allow microphone access in your browser settings.${iosHint}`);
+          setError(`Microphone permission was denied. Please allow microphone access in your browser settings.${hint}`);
           setIsListening(false);
           console.error("Speech recognition error: not-allowed");
         } else if (event.error === "no-speech") {
           // Normal silence event — onend will fire right after and handle restart.
-          // No action needed here for any platform.
         } else if (event.error === "aborted") {
           // Fires when rec.stop() is called. State already updated by stopListening().
           console.warn("Speech recognition aborted (expected when stopping).");
@@ -256,9 +260,9 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
         const shouldRestart =
           isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current;
 
-        if (onMobileSafari && shouldRestart) {
-          // iOS: onend means the current phrase is complete. Commit it to finals
-          // before restarting so the next phrase appends cleanly.
+        if (onMobile && shouldRestart) {
+          // Mobile: onend means the current phrase is complete. Commit it cleanly
+          // to finalTranscriptRef before restarting for the next phrase.
           const phrase = iosCurrentPhraseRef.current.trim();
           if (phrase) {
             finalTranscriptRef.current = finalTranscriptRef.current
@@ -266,17 +270,12 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
               : phrase;
           }
           iosCurrentPhraseRef.current = "";
-        } else if (onMobileSafari && !shouldRestart) {
-          // Being stopped for submission — clear without committing (sendAnswer
-          // already captured the displayed text as the answer).
+        } else if (onMobile && !shouldRestart) {
+          // Being stopped for submission — sendAnswer already captured the text.
           iosCurrentPhraseRef.current = "";
         }
 
         if (shouldRestart) {
-          // Use 300ms delay on all platforms:
-          // - iOS: prevents InvalidStateError on rapid restart
-          // - Android: prevents re-processing of recently buffered mic audio
-          //   which can cause the previous phrase to appear duplicated
           setTimeout(() => {
             try {
               rec.start();
@@ -290,10 +289,12 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       recognitionRef.current = rec;
     } else {
       setSpeechSupported(false);
-      const iosMsg = isMobileSafariRef.current
+      const msg = isIOSDevice
         ? "Please open this page in the Safari browser app on your iPhone or iPad to use voice input."
+        : isAndroidDevice
+        ? "Please open this page in Chrome to use voice input on Android."
         : "Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.";
-      setError(iosMsg);
+      setError(msg);
     }
 
     return () => {
