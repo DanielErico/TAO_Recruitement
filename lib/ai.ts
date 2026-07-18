@@ -550,7 +550,7 @@ Rules:
 4. Keep questions concise and professional (2-3 sentences max).
 5. TONE: Friendly, conversational, and encouraging.
 6. Reference specific details from the candidate's CV or previous answers to make it feel personal.
-7. TIME LIMIT: The remaining interview time is ${globalTimeLeft !== undefined ? globalTimeLeft : 300} seconds. If the remaining time is less than 80 seconds, you MUST conclude the interview immediately. Set "isComplete" to true and write a warm concluding thank you message. Do NOT ask any more questions.`;
+7. TIME LIMIT: The remaining interview time is ${globalTimeLeft !== undefined ? globalTimeLeft : 900} seconds. If the remaining time is less than 80 seconds, you MUST conclude the interview immediately. Set "isComplete" to true and write a warm concluding thank you message. Do NOT ask any more questions.`;
 
   const prompt = `--- JOB SPECIFICATIONS ---
 Role: ${jobTitle}
@@ -597,7 +597,7 @@ function generateFallbackInterviewQuestion(
 
   if (globalTimeLeft !== undefined && globalTimeLeft < 80) {
     return {
-      question: `Thank you so much, ${firstName}! Our 5-minute time limit is nearly up, so we'll stop here. We will finalize your responses and submit them to the recruiter. Best of luck!`,
+      question: `Thank you so much, ${firstName}! Our 15-minute time limit is nearly up, so we'll stop here. We will finalize your responses and submit them to the recruiter. Best of luck!`,
       isComplete: true,
       recommendedSeconds: 30,
     };

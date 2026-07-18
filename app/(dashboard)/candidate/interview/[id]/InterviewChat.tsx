@@ -36,7 +36,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const [isListening, setIsListening] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(60);
   const [recommendedSeconds, setRecommendedSeconds] = useState<number>(60);
-  const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(900); // 15 minutes in seconds
   const [speechSupported, setSpeechSupported] = useState<boolean | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -99,7 +99,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     if (finalAnswers.length === 0) {
       finalAnswers.push({
         question: "Introduction",
-        response: "(No responses recorded within the 5-minute time limit)"
+        response: "(No responses recorded within the 15-minute time limit)"
       });
     }
 
@@ -549,8 +549,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   function handleStart() {
     setStartTime(new Date());
     setMode("chat");
-    setGlobalTimeLeft(300); // Reset global timer
-    fetchNextQuestion(0, [], 300);
+    setGlobalTimeLeft(900); // Reset global timer
+    fetchNextQuestion(0, [], 900);
   }
 
   // ── Render Intro Mode ──
@@ -583,8 +583,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             <div className="flex gap-2.5 items-start">
               <Clock size={16} className="text-[var(--color-brand)] mt-0.5" />
               <div>
-                <strong className="block">5-Minute Total Time Limit</strong>
-                <span className="text-[var(--color-muted-foreground)]">The entire interview is limited to exactly 5 minutes total. The countdown will begin as soon as you start.</span>
+                <strong className="block">15-Minute Total Time Limit</strong>
+                <span className="text-[var(--color-muted-foreground)]">The entire interview is limited to exactly 15 minutes total. The countdown will begin as soon as you start.</span>
               </div>
             </div>
 
@@ -592,7 +592,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
               <Info size={16} className="text-[var(--color-brand)] mt-0.5" />
               <div>
                 <strong className="block">Auto-Submission & Finalization</strong>
-                <span className="text-[var(--color-muted-foreground)]">When the 5-minute limit expires, all your answers gathered so far will be automatically finalized and submitted to the recruiter.</span>
+                <span className="text-[var(--color-muted-foreground)]">When the 15-minute limit expires, all your answers gathered so far will be automatically finalized and submitted to the recruiter.</span>
               </div>
             </div>
 
@@ -666,7 +666,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   };
 
   // Calculate timer color configuration
-  const globalProgressPercent = (globalTimeLeft / 300) * 100;
+  const globalProgressPercent = (globalTimeLeft / 900) * 100;
   const isGlobalTimeLow = globalTimeLeft <= 60;
   const isTimeLow = timeLeft <= 15;
 
