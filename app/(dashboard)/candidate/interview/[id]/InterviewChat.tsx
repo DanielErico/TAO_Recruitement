@@ -37,6 +37,12 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const [timeLeft, setTimeLeft] = useState<number>(60);
   const [recommendedSeconds, setRecommendedSeconds] = useState<number>(60);
   const [globalTimeLeft, setGlobalTimeLeft] = useState<number>(300); // 5 minutes in seconds
+  const [speechSupported, setSpeechSupported] = useState<boolean | null>(null);
+
+  // Detect iOS/Safari for platform-specific behaviour
+  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isSafari = typeof navigator !== "undefined" && /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  const isMobileSafari = isIOS || isSafari;
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -156,28 +162,37 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
+      setSpeechSupported(true);
       const rec = new SpeechRecognition();
-      rec.continuous = true;
+
+      // iOS/Safari does NOT support continuous mode reliably:
+      // with continuous=true, the mic silently freezes on iOS.
+      // Instead we set continuous=false on mobile Safari and
+      // manually restart after each result in onend.
+      rec.continuous = !isMobileSafari;
       rec.interimResults = true;
       rec.lang = "en-US";
 
       rec.onresult = (event: any) => {
         let interimTranscript = "";
         let newFinalTranscript = "";
-        
+
         for (let i = event.resultIndex; i < event.results.length; ++i) {
           const result = event.results[i];
-          if (result.isFinal) {
+          // isFinal is sometimes inconsistent on iOS Safari — treat
+          // all results as final on mobile as a safe fallback.
+          const treatAsFinal = result.isFinal || isMobileSafari;
+          if (treatAsFinal) {
             newFinalTranscript += result[0].transcript;
           } else {
             interimTranscript += result[0].transcript;
           }
         }
-        
+
         if (newFinalTranscript) {
           finalTranscriptRef.current += newFinalTranscript;
         }
-        
+
         const fullTranscript = finalTranscriptRef.current + interimTranscript;
         if (fullTranscript) {
           setCurrentInput(fullTranscript);
@@ -187,30 +202,47 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       rec.onerror = (event: any) => {
         console.error("Speech recognition error:", event.error);
         if (event.error === "not-allowed") {
-          setError("Microphone permission was denied. Please allow microphone access to speak your answers.");
+          const iosHint = isMobileSafari
+            ? " On iPhone/iPad: go to Settings → Safari → Microphone and allow access. Also ensure Siri is enabled in Settings → Siri & Search."
+            : "";
+          setError(`Microphone permission was denied. Please allow microphone access in your browser settings.${iosHint}`);
           setIsListening(false);
         } else if (event.error === "no-speech") {
-          // Keep active, no-op
+          // On iOS this fires frequently — silently restart instead of stopping
+          if (isMobileSafari && isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
+            setTimeout(() => {
+              try { rec.start(); } catch (e) {}
+            }, 150);
+          }
+        } else if (event.error === "aborted") {
+          // iOS fires 'aborted' when we call stop() — this is expected, ignore it
         } else {
-          // Transient error, reset status
           setIsListening(false);
         }
       };
 
       rec.onend = () => {
-        // Auto-restart if we should be listening and haven't transitioned
+        // iOS stops after every utterance (continuous=false).
+        // Use a short delay before restarting to avoid InvalidStateError.
         if (isListeningRef.current && modeRef.current === "chat" && !isAiTypingRef.current) {
-          try {
-            rec.start();
-          } catch (e) {
-            console.warn("Failed to restart speech recognition:", e);
-          }
+          const delay = isMobileSafari ? 200 : 0;
+          setTimeout(() => {
+            try {
+              rec.start();
+            } catch (e) {
+              console.warn("Failed to restart speech recognition:", e);
+            }
+          }, delay);
         }
       };
 
       recognitionRef.current = rec;
     } else {
-      setError("Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.");
+      setSpeechSupported(false);
+      const iosMsg = isIOS
+        ? "Please open this page in the Safari browser app on your iPhone or iPad to use voice input."
+        : "Speech recognition is not supported in this browser. Please use Chrome, Safari, or Edge.";
+      setError(iosMsg);
     }
 
     return () => {
@@ -255,8 +287,11 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       recognitionRef.current.start();
       setIsListening(true);
       setError(null);
-    } catch (e) {
-      // Already running or blocked
+    } catch (e: any) {
+      // "InvalidStateError" means recognition is already running — safe to ignore
+      if (e?.name !== "InvalidStateError") {
+        console.warn("startListening error:", e);
+      }
     }
   }
 
@@ -266,11 +301,13 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       recognitionRef.current.stop();
       setIsListening(false);
     } catch (e) {
-      // Already stopped
+      // Already stopped — safe to ignore
     }
   }
 
   function toggleListening() {
+    // On iOS, programmatic start() without a direct user gesture can be blocked.
+    // The onClick/onTouchEnd handlers below count as a gesture so this is safe.
     if (isListening) {
       stopListening();
     } else {
@@ -683,14 +720,19 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             </div>
 
             {/* Toggle Mic Button */}
+            {/* onTouchEnd is added alongside onClick for iOS Safari — iOS sometimes
+                does not fire onClick reliably on rounded buttons inside forms.
+                preventDefault stops the ghost click that would double-fire. */}
             <Button
               type="button"
               onClick={toggleListening}
+              onTouchEnd={(e) => { e.preventDefault(); toggleListening(); }}
               disabled={isAiTyping}
               variant={isListening ? "destructive" : "outline"}
-              className={`h-12 w-12 rounded-full p-0 flex items-center justify-center shrink-0 shadow-sm transition-all ${
+              className={`h-12 w-12 rounded-full p-0 flex items-center justify-center shrink-0 shadow-sm transition-all touch-manipulation ${
                 isListening ? "mic-active-pulse" : "hover:bg-[var(--color-brand-light)] hover:text-[var(--color-brand)]"
               }`}
+              style={{ WebkitTapHighlightColor: "transparent" }}
             >
               {isListening ? <Mic size={20} className="animate-pulse" /> : <MicOff size={20} />}
             </Button>
