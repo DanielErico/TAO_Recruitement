@@ -10,6 +10,7 @@ import {
   ExternalLink,
   Users,
 } from "lucide-react";
+import { isPlanB } from "@/lib/config";
 
 interface PipelineApp {
   id: string;
@@ -23,7 +24,7 @@ interface PipelineApp {
 const STAGES = [
   { id: "applied",     label: "Applied" },
   { id: "screening",   label: "Screening" },
-  { id: "interview",   label: "Interview" },
+  { id: "interview",   label: isPlanB() ? "Assessment" : "Interview" },
   { id: "evaluation",  label: "Evaluation" },
   { id: "shortlisted", label: "Shortlisted" },
   { id: "offered",     label: "Offered" },

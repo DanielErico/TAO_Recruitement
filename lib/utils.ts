@@ -66,7 +66,21 @@ export function getStatusConfig(status: string) {
     // Application statuses
     applied: { label: "Applied", className: "bg-blue-50 text-blue-700" },
     screening: { label: "Screening", className: "bg-purple-50 text-purple-700" },
-    interview: { label: "Interview", className: "bg-indigo-50 text-indigo-700" },
+    interview: {
+      // "interview" status means "Assessment Pending" in Plan B, "Interview Invite" in Plan A.
+      // We import isPlanB lazily to avoid circular dependency — utils.ts must stay server-safe.
+      label: (() => {
+        try {
+          const mode =
+            (typeof process !== "undefined" && process.env.NEXT_PUBLIC_RECRUITMENT_MODE) ||
+            "PLAN_B";
+          return mode === "PLAN_A" ? "Interview Invite" : "Assessment Pending";
+        } catch {
+          return "Assessment Pending";
+        }
+      })(),
+      className: "bg-indigo-50 text-indigo-700",
+    },
     evaluation: { label: "Evaluation", className: "bg-orange-50 text-orange-700" },
     shortlisted: { label: "Shortlisted", className: "bg-[var(--color-brand-light)] text-[var(--color-brand)]" },
     offered: { label: "Offered", className: "bg-emerald-50 text-emerald-700" },

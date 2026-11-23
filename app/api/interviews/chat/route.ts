@@ -43,8 +43,29 @@ export async function POST(request: NextRequest) {
       .select(`
         id,
         candidate_id,
-        candidate:user_profiles (full_name),
-        job:jobs (title, description, requirements)
+        candidate:user_profiles (
+          id,
+          full_name,
+          email,
+          candidate_profiles (
+            location,
+            bio,
+            skills,
+            linkedin_url,
+            portfolio_url
+          )
+        ),
+        job:jobs (
+          id,
+          title,
+          description,
+          requirements,
+          responsibilities,
+          skills_required,
+          employment_type,
+          location,
+          department:departments (name)
+        )
       `)
       .eq("id", applicationId)
       .single();
@@ -59,35 +80,70 @@ export async function POST(request: NextRequest) {
     }
 
     const job = app.job as any;
-    const candidateName = (app.candidate as any)?.full_name || "Candidate";
+    const candidateObj = Array.isArray(app.candidate) ? app.candidate[0] : (app.candidate as any);
+    const candidateProfile = Array.isArray(candidateObj?.candidate_profiles)
+      ? candidateObj?.candidate_profiles[0]
+      : candidateObj?.candidate_profiles;
+    const candidateName = candidateObj?.full_name || "Candidate";
 
-    // 2. Fetch CV Analysis details
-    const { data: cvAnalysis } = await supabase
-      .from("cv_analyses")
-      .select("professional_summary, skills")
-      .eq("application_id", applicationId)
-      .maybeSingle();
+    // 2. Fetch CV Analysis details (check candidate_ai_analysis first, then cv_analyses)
+    const [{ data: aiAnalysis }, { data: cvAnalysis }] = await Promise.all([
+      supabase
+        .from("candidate_ai_analysis")
+        .select("professional_summary, skills, work_experience, education")
+        .eq("application_id", applicationId)
+        .maybeSingle(),
+      supabase
+        .from("cv_analyses")
+        .select("professional_summary, skills, work_experience, education")
+        .eq("application_id", applicationId)
+        .maybeSingle(),
+    ]);
 
-    const cvSummary = cvAnalysis?.professional_summary || "Eager applicant for this position.";
-    const cvSkills = cvAnalysis?.skills || [];
+    const cvSummary =
+      aiAnalysis?.professional_summary ||
+      cvAnalysis?.professional_summary ||
+      candidateProfile?.bio ||
+      `Applicant for ${job.title} position.`;
 
-    // 3. Generate dynamic question
-    const result = await generateNextInterviewQuestion(
-      job.title,
-      job.description || "",
+    const cvSkills =
+      aiAnalysis?.skills ||
+      cvAnalysis?.skills ||
+      candidateProfile?.skills ||
+      job.skills_required ||
+      [];
+
+    const workExperience = aiAnalysis?.work_experience || cvAnalysis?.work_experience || [];
+    const education = aiAnalysis?.education || cvAnalysis?.education || [];
+
+    // 3. Generate dynamic question using Universal AI Interview Engine
+    const result = await generateNextInterviewQuestion({
+      jobTitle: job.title,
+      jobDescription: job.description || "",
+      jobRequirements: job.requirements || "",
+      jobResponsibilities: job.responsibilities || "",
+      department: job.department?.name || "General",
+      location: job.location || "",
+      employmentType: job.employment_type || "Full-time",
+      organisationName: "The Agriculture Option (TAO)",
       candidateName,
+      candidateId: app.candidate_id,
       cvSummary,
       cvSkills,
+      workExperience,
+      education,
       chatHistory,
       questionIndex,
-      globalTimeLeft
-    );
+      globalTimeLeft,
+    });
 
     return NextResponse.json({
       success: true,
       question: result.question,
       isComplete: result.isComplete,
       recommendedSeconds: result.recommendedSeconds,
+      section: result.section,
+      targetCompetency: result.targetCompetency,
     });
   } catch (err: any) {
     console.error("Failed to generate next interview question:", err);

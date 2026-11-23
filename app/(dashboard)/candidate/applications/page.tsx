@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { formatDate, getStatusConfig } from "@/lib/utils";
+import { isServerPlanB } from "@/lib/config-server";
 import { FileText, Clock, ExternalLink } from "lucide-react";
 import type { Metadata } from "next";
 
@@ -39,6 +40,8 @@ export default async function CandidateApplicationsPage() {
     .order("applied_at", { ascending: false });
 
   const applications = rawApplications ?? [];
+
+  const planB = await isServerPlanB();
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -100,8 +103,8 @@ export default async function CandidateApplicationsPage() {
                   
                   {app.status === "interview" && (
                     <Button size="sm" asChild>
-                      <Link href={`/candidate/interview/${app.id}`}>
-                        Start Interview
+                      <Link href={planB ? `/candidate/assessment/${app.id}` : `/candidate/interview/${app.id}`}>
+                        {planB ? "Start Assessment" : "Start Interview"}
                       </Link>
                     </Button>
                   )}

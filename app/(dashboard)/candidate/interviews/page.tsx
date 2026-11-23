@@ -1,6 +1,7 @@
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { isServerPlanB } from "@/lib/config-server";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, Calendar, ChevronRight, CheckCircle2, Clock, WifiOff } from "lucide-react";
@@ -19,6 +20,10 @@ function withTimeout<T>(promise: Promise<T>, ms = 8000): Promise<T | null> {
 }
 
 export default async function CandidateInterviewsPage() {
+  if (await isServerPlanB()) {
+    redirect("/candidate/assessments");
+  }
+
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 

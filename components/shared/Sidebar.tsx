@@ -14,6 +14,7 @@ import {
   Users,
   FileText,
   MessageSquare,
+  FileCheck,
   Star,
   Settings,
   LogOut,
@@ -23,6 +24,7 @@ import {
   User,
   BarChart2,
 } from "lucide-react";
+import { isPlanB } from "@/lib/config";
 import type { UserRole } from "@/types";
 
 interface NavItem {
@@ -114,7 +116,18 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
     };
   }, [role, supabase]);
 
-  const filteredItems = NAV_ITEMS.filter((item) => item.roles.includes(role));
+  const planB = isPlanB();
+  const filteredItems = NAV_ITEMS.filter((item) => item.roles.includes(role)).map((item) => {
+    if (item.href === "/candidate/interviews" && planB) {
+      return {
+        ...item,
+        label: "My Assessments",
+        href: "/candidate/assessments",
+        icon: FileCheck,
+      };
+    }
+    return item;
+  });
 
   async function handleSignOut() {
     document.cookie = "user_role=; path=/; max-age=0; SameSite=Lax";
@@ -151,7 +164,9 @@ export function Sidebar({ role, fullName, email }: SidebarProps) {
               ? pathname === item.href
               : pathname.startsWith(item.href);
 
-          const showDot = item.href === "/candidate/interviews" && pendingInterviewsCount > 0;
+          const showDot =
+            (item.href === "/candidate/interviews" || item.href === "/candidate/assessments") &&
+            pendingInterviewsCount > 0;
 
           return (
             <Link

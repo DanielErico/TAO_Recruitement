@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { isServerPlanB } from "@/lib/config-server";
 import { InterviewChat } from "./InterviewChat";
 import type { Metadata } from "next";
 
@@ -12,6 +13,11 @@ export default async function CandidateInterviewPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: appId } = await params;
+
+  // Plan B active: Redirect candidate to online assessment
+  if (await isServerPlanB()) {
+    redirect(`/candidate/assessment/${appId}`);
+  }
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();

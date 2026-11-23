@@ -44,10 +44,32 @@ export async function POST(request: NextRequest) {
 
     const supabase = createAdminClient();
 
-    // 1. Fetch application details to verify it exists and get job info
+    // 1. Fetch application details to verify it exists and get job and candidate info
     const { data: application, error: appError } = await supabase
       .from("applications")
-      .select("id, job_id, jobs(title, description, requirements)")
+      .select(`
+        id,
+        job_id,
+        candidate_id,
+        jobs (
+          id,
+          title,
+          description,
+          requirements,
+          responsibilities,
+          department:departments (name)
+        ),
+        candidate:user_profiles (
+          id,
+          full_name,
+          email,
+          candidate_profiles (
+            location,
+            bio,
+            skills
+          )
+        )
+      `)
       .eq("id", applicationId)
       .single();
 
@@ -55,23 +77,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Application not found" }, { status: 404 });
     }
 
-    const jobTitle = (application.jobs as any)?.title || "Target Position";
-    const jobDescription = (application.jobs as any)?.description || "";
-    const jobRequirements = (application.jobs as any)?.requirements || "";
+    const job = application.jobs as any;
+    const jobTitle = job?.title || "Target Position";
+    const jobDescription = job?.description || "";
+    const jobRequirements = job?.requirements || "";
+    const jobResponsibilities = job?.responsibilities || "";
+    const departmentName = job?.department?.name || "General";
+    const candidateObj = Array.isArray(application.candidate) ? application.candidate[0] : (application.candidate as any);
+    const candidateProfile = Array.isArray(candidateObj?.candidate_profiles)
+      ? candidateObj?.candidate_profiles[0]
+      : candidateObj?.candidate_profiles;
+    const candidateName = candidateObj?.full_name || "Candidate";
 
-    // 1.5 Fetch candidate's CV analysis record
-    const { data: cvAnalysis, error: cvError } = await supabase
-      .from("cv_analyses")
-      .select("*")
-      .eq("application_id", applicationId)
-      .maybeSingle();
+    // 1.5 Fetch candidate's CV analysis record (candidate_ai_analysis first, then cv_analyses)
+    const [{ data: aiAnalysis }, { data: cvAnalysis }] = await Promise.all([
+      supabase
+        .from("candidate_ai_analysis")
+        .select("*")
+        .eq("application_id", applicationId)
+        .maybeSingle(),
+      supabase
+        .from("cv_analyses")
+        .select("*")
+        .eq("application_id", applicationId)
+        .maybeSingle(),
+    ]);
 
-    if (cvError) {
-      console.error("Warning: failed to fetch cv_analyses:", cvError);
-    }
+    const cvAnalysisData = aiAnalysis || cvAnalysis || {
+      professional_summary: (candidateProfile as any)?.bio || "",
+      skills: (candidateProfile as any)?.skills || [],
+      strengths: [],
+      weaknesses: [],
+      work_experience: [],
+      job_fit_score: 70
+    };
 
-    const start = startTime ? new Date(startTime) : new Date(Date.now() - 10 * 60 * 1000);
+    const start = startTime ? new Date(startTime) : new Date(Date.now() - 15 * 60 * 1000);
     const end = new Date();
+    const durationMins = Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000));
 
     // 2. Upsert into interviews table to prevent constraint errors
     const { data: interview, error: intError } = await supabase
@@ -133,44 +176,39 @@ export async function POST(request: NextRequest) {
     }
 
     // 4. Generate AI evaluation metrics using live CV and interview data
-    const cvAnalysisData = cvAnalysis || {
-      professional_summary: "",
-      skills: [],
-      strengths: [],
-      weaknesses: [],
-      work_experience: [],
-      job_fit_score: 70
-    };
-
     console.log("[Submit Route] Evaluating interview with job:", jobTitle, "and candidate answers:", answers.length);
 
     let evaluation;
     try {
-      evaluation = await evaluateInterview(
+      evaluation = await evaluateInterview({
         jobTitle,
         jobDescription,
         jobRequirements,
-        cvAnalysisData,
-        answers
-      );
+        jobResponsibilities,
+        department: departmentName,
+        organisationName: "The Agriculture Option (TAO)",
+        candidateName,
+        candidateId,
+        cvAnalysis: cvAnalysisData,
+        interviewResponses: answers,
+        durationMinutes: durationMins,
+        switchedTabs,
+      });
     } catch (evalErr: any) {
       console.error("[Submit Route] evaluateInterview threw error, using fallback:", evalErr);
-      const techScore = Math.floor(Math.random() * 16) + 80;
-      const commScore = Math.floor(Math.random() * 16) + 80;
-      const expScore = Math.floor(Math.random() * 16) + 75;
-      const probScore = Math.floor(Math.random() * 21) + 75;
-      const cultScore = Math.floor(Math.random() * 16) + 80;
-      const overall = Math.round((techScore + commScore + expScore + probScore + cultScore) / 5);
+      const base = 75;
       evaluation = {
-        technical_score: techScore,
-        communication_score: commScore,
-        experience_score: expScore,
-        problem_solving_score: probScore,
-        culture_fit_score: cultScore,
-        overall_score: overall,
-        recommendation: overall >= 85 ? "highly_recommended" : "recommended",
-        recruiter_summary: `The candidate successfully completed the screening interview. Fallback evaluation applied.`,
-        ai_rationale: `Automated baseline scoring calculated due to an evaluation error: ${evalErr.message}`
+        technical_score: base,
+        communication_score: base + 5,
+        experience_score: base,
+        problem_solving_score: base,
+        culture_fit_score: base,
+        overall_score: base,
+        recommendation: "recommended",
+        recommended_next_step: "Recommend for further recruiter review" as const,
+        recruiter_summary: `The candidate successfully completed the screening interview. Fallback evaluation applied: ${evalErr.message}`,
+        ai_rationale: `Automated baseline scoring calculated due to an evaluation error: ${evalErr.message}`,
+        report: {} as any,
       };
     }
 

@@ -23,9 +23,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { analyzeCV } from "@/lib/ai";
+import { analyzeCV, formatAIErrorCode, PRIMARY_NVIDIA_MODEL } from "@/lib/ai";
 import { extractCVText } from "@/lib/cv-extractor";
 import { EmailService } from "@/lib/email-service";
+import { isPlanB } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -222,7 +223,9 @@ export async function POST(request: NextRequest) {
     // ── 5. AI CV Analysis ───────────────────────────────────────
     let aiAnalysis: Awaited<ReturnType<typeof analyzeCV>> | null = null;
     let aiError: string | undefined;
-    let applicationStatus = "screening"; // default
+    const planBActive = isPlanB();
+    // In Plan B, all applicants proceed to the online assessment stage ('interview')
+    let applicationStatus = planBActive ? "interview" : "screening";
 
     if (extractionStatus === "success" && extractedText) {
       try {
@@ -234,11 +237,14 @@ export async function POST(request: NextRequest) {
           35000 // 35 seconds timeout limit to ensure auto-evaluation completes successfully
         );
 
-        // High fit score → auto-invite to interview
-        applicationStatus = aiAnalysis.overall_score >= 75 ? "interview" : "screening";
+        // In Plan A, high fit score auto-invites to interview; in Plan B, all applicants proceed
+        if (!planBActive) {
+          applicationStatus = aiAnalysis.overall_score >= 75 ? "interview" : "screening";
+        }
       } catch (err: any) {
         console.error("[Applications] AI analysis failed:", err.message);
-        aiError = err.message;
+        const formatted = formatAIErrorCode(err);
+        aiError = formatted.display;
         // Application proceeds — analysis failure is non-blocking
       }
     } else {
@@ -273,7 +279,7 @@ export async function POST(request: NextRequest) {
         job_id: jobId,
         extracted_text: extractedText,
         extraction_status: extractionStatus,
-        extraction_error: extractionError ?? null,
+        extraction_error: extractionError ? formatAIErrorCode(extractionError).display : (aiError ? formatAIErrorCode(aiError).display : null),
         professional_summary: aiAnalysis?.professional_summary ?? "",
         skills: aiAnalysis?.skills ?? [],
         strengths: aiAnalysis?.strengths ?? [],
@@ -284,7 +290,7 @@ export async function POST(request: NextRequest) {
         certifications: aiAnalysis?.certifications ?? [],
         recommended_role_fit: aiAnalysis?.recommended_role_fit ?? "",
         overall_score: aiAnalysis?.overall_score ?? 0,
-        ai_model: "meta/llama-3.3-70b-instruct",
+        ai_model: PRIMARY_NVIDIA_MODEL,
         analyzed_at: aiAnalysis ? new Date().toISOString() : null,
       });
 
@@ -345,10 +351,14 @@ export async function POST(request: NextRequest) {
         // 1. Send Application Received confirmation
         await EmailService.sendApplicationReceived(candidateEmail, candidateName, job.title);
 
-        // 2. If status is 'interview' (due to auto-qualification fitScore >= 75), send invite
+        // 2. If status is 'interview', send invitation to next stage (Assessment in Plan B, Voice Interview in Plan A)
         if (applicationStatus === "interview") {
           const origin = request.nextUrl.origin;
-          await EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id, origin);
+          if (planBActive) {
+            await EmailService.sendAssessmentInvite(candidateEmail, candidateName, job.title, application.id, origin);
+          } else {
+            await EmailService.sendInterviewInvite(candidateEmail, candidateName, job.title, application.id, origin);
+          }
         }
       } catch (err: any) {
         console.error("[Applications] Email notifications failed:", err.message);

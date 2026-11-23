@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
     // Strip parameters like ;codecs=opus to prevent Gemini API validation errors
     const mimeType = (file.type || "audio/webm").split(";")[0].trim();
 
+    console.log(`[Transcribe API] Received audio upload: mimeType="${mimeType}", size=${buffer.length} bytes`);
+
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "Gemini API key is not configured" }, { status: 500 });
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-flash-latest",
+      model: "gemini-2.5-flash",
       generationConfig: {
         temperature: 0.1,
       },
@@ -60,6 +62,7 @@ STRICT INSTRUCTIONS:
     ]);
 
     const transcript = result.response.text().trim();
+    console.log(`[Transcribe API] Successfully generated transcript: "${transcript}"`);
     return NextResponse.json({ transcript });
   } catch (err: any) {
     console.error("[Transcribe API Error] Audio transcription failed:", err);

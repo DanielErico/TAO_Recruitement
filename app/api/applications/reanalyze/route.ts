@@ -12,7 +12,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { analyzeCV } from "@/lib/ai";
+import { analyzeCV, formatAIErrorCode, PRIMARY_NVIDIA_MODEL } from "@/lib/ai";
 import { extractCVText } from "@/lib/cv-extractor";
 
 export const dynamic = "force-dynamic";
@@ -137,13 +137,19 @@ export async function POST(request: NextRequest) {
       );
     } catch (err: any) {
       console.error("[Reanalyze] AI analysis failed:", err.message);
-      aiError = err.message;
+      const formatted = formatAIErrorCode(err);
+      aiError = formatted.display;
     }
   }
 
   if (aiError) {
+    const formatted = formatAIErrorCode(aiError);
     return NextResponse.json(
-      { error: `AI Analysis failed: ${aiError}` },
+      { 
+        error: formatted.display,
+        errorCode: formatted.code,
+        message: formatted.message
+      },
       { status: 500 }
     );
   }
@@ -158,7 +164,7 @@ export async function POST(request: NextRequest) {
         job_id: application.job_id,
         extracted_text: extraction.text,
         extraction_status: extraction.status,
-        extraction_error: extraction.error ?? null,
+        extraction_error: extraction.error ? formatAIErrorCode(extraction.error).display : null,
         professional_summary: aiAnalysis?.professional_summary ?? "",
         skills: aiAnalysis?.skills ?? [],
         strengths: aiAnalysis?.strengths ?? [],
@@ -169,7 +175,7 @@ export async function POST(request: NextRequest) {
         certifications: aiAnalysis?.certifications ?? [],
         recommended_role_fit: aiAnalysis?.recommended_role_fit ?? "",
         overall_score: aiAnalysis?.overall_score ?? 0,
-        ai_model: "meta/llama-3.3-70b-instruct",
+        ai_model: PRIMARY_NVIDIA_MODEL,
         analyzed_at: aiAnalysis ? new Date().toISOString() : null,
         updated_at: new Date().toISOString(),
       },

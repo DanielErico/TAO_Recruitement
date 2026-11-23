@@ -49,16 +49,20 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   const isListeningRef = useRef(isListening);
   const modeRef = useRef(mode);
   const isAiTypingRef = useRef(isAiTyping);
+  const isTranscribingRef = useRef(isTranscribing);
   const answersRef = useRef(answers);
   const currentInputRef = useRef(currentInput);
   const messagesRef = useRef(messages);
   const isSubmittingRef = useRef(false);
+  const shouldSubmitOnTranscribeRef = useRef(false);
+  const isTimerExpiredRef = useRef(false);
 
   useEffect(() => {
     isListeningRef.current = isListening;
     modeRef.current = mode;
     isAiTypingRef.current = isAiTyping;
-  }, [isListening, mode, isAiTyping]);
+    isTranscribingRef.current = isTranscribing;
+  }, [isListening, mode, isAiTyping, isTranscribing]);
 
   useEffect(() => {
     answersRef.current = answers;
@@ -213,6 +217,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     if (isTranscribing || isAiTyping || isSubmittingRef.current) return;
     setError(null);
     audioChunksRef.current = [];
+    isTimerExpiredRef.current = false;
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -239,13 +244,20 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
       };
 
       recorder.onstop = async () => {
-        if (audioChunksRef.current.length === 0) return;
+        if (audioChunksRef.current.length === 0) {
+          if (shouldSubmitOnTranscribeRef.current) {
+            await sendAnswer("(No verbal response captured)");
+            shouldSubmitOnTranscribeRef.current = false;
+          }
+          return;
+        }
 
         setIsTranscribing(true);
         try {
           const audioBlob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
           const formData = new FormData();
-          formData.append("audio", audioBlob, "interview-response.webm");
+          const ext = recorder.mimeType.includes("mp4") ? "mp4" : recorder.mimeType.includes("ogg") ? "ogg" : "webm";
+          formData.append("audio", audioBlob, `interview-response.${ext}`);
 
           const res = await fetch("/api/interviews/transcribe", {
             method: "POST",
@@ -258,14 +270,25 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
           }
 
           const data = await res.json();
-          const transcriptText = data.transcript || "";
+          const transcriptText = (data.transcript || "").trim();
           
-          if (transcriptText) {
-            setCurrentInput(transcriptText);
+          if (shouldSubmitOnTranscribeRef.current) {
+            await sendAnswer(transcriptText || "(No verbal response captured)");
+            shouldSubmitOnTranscribeRef.current = false;
+          } else {
+            if (transcriptText) {
+              setCurrentInput(transcriptText);
+            }
           }
         } catch (e: any) {
           console.error("Transcription error:", e);
           setError("TAO AI was unable to transcribe your voice. Please try speaking again.");
+          if (shouldSubmitOnTranscribeRef.current) {
+            if (isTimerExpiredRef.current) {
+              await sendAnswer("(No verbal response captured)");
+            }
+            shouldSubmitOnTranscribeRef.current = false;
+          }
         } finally {
           setIsTranscribing(false);
           // Release microphone tracks
@@ -305,44 +328,14 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   }
 
   async function handleAutoSubmit() {
-    if (isListening) {
-      setIsListening(false);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.onstop = async () => {
-          if (audioChunksRef.current.length > 0) {
-            setIsTranscribing(true);
-            try {
-              const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current!.mimeType });
-              const formData = new FormData();
-              formData.append("audio", audioBlob, "interview-response.webm");
-
-              const res = await fetch("/api/interviews/transcribe", {
-                method: "POST",
-                body: formData,
-              });
-
-              if (!res.ok) throw new Error("Transcription failed");
-              const data = await res.json();
-              const transcript = data.transcript || "(No verbal response captured)";
-              await sendAnswer(transcript);
-            } catch (e) {
-              console.error("Transcription error on auto-submit:", e);
-              await sendAnswer("(No verbal response captured)");
-            } finally {
-              setIsTranscribing(false);
-              if (streamRef.current) {
-                streamRef.current.getTracks().forEach((track) => track.stop());
-                streamRef.current = null;
-              }
-            }
-          } else {
-            await sendAnswer("(No verbal response captured)");
-          }
-        };
-        mediaRecorderRef.current.stop();
-      }
+    isTimerExpiredRef.current = true;
+    if (isListeningRef.current) {
+      shouldSubmitOnTranscribeRef.current = true;
+      stopListening();
+    } else if (isTranscribingRef.current) {
+      shouldSubmitOnTranscribeRef.current = true;
     } else {
-      const finalSpeech = currentInput.trim() || "(No verbal response captured)";
+      const finalSpeech = currentInputRef.current.trim() || "(No verbal response captured)";
       await sendAnswer(finalSpeech);
     }
   }
@@ -352,41 +345,8 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     if (isAiTyping || isPending || isTranscribing) return;
 
     if (isListening) {
-      setIsListening(false);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.onstop = async () => {
-          if (audioChunksRef.current.length > 0) {
-            setIsTranscribing(true);
-            try {
-              const audioBlob = new Blob(audioChunksRef.current, { type: mediaRecorderRef.current!.mimeType });
-              const formData = new FormData();
-              formData.append("audio", audioBlob, "interview-response.webm");
-
-              const res = await fetch("/api/interviews/transcribe", {
-                method: "POST",
-                body: formData,
-              });
-
-              if (!res.ok) throw new Error("Transcription failed");
-              const data = await res.json();
-              const transcript = data.transcript || "(No verbal response captured)";
-              await sendAnswer(transcript);
-            } catch (e) {
-              console.error("Transcription error on send:", e);
-              await sendAnswer("(No verbal response captured)");
-            } finally {
-              setIsTranscribing(false);
-              if (streamRef.current) {
-                streamRef.current.getTracks().forEach((track) => track.stop());
-                streamRef.current = null;
-              }
-            }
-          } else {
-            await sendAnswer("(No verbal response captured)");
-          }
-        };
-        mediaRecorderRef.current.stop();
-      }
+      shouldSubmitOnTranscribeRef.current = true;
+      stopListening();
     } else {
       const finalSpeech = currentInput.trim() || "(No verbal response captured)";
       await sendAnswer(finalSpeech);
@@ -400,11 +360,11 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
     stopListening();
 
     // Determine the question being answered
-    const aiMessages = messages.filter((m) => m.sender === "ai");
+    const aiMessages = messagesRef.current.filter((m) => m.sender === "ai");
     const currentQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].text : "Introduction";
 
     // Save answer
-    const newAnswers = [...answers, { question: currentQuestion, response: text }];
+    const newAnswers = [...answersRef.current, { question: currentQuestion, response: text }];
     setAnswers(newAnswers);
 
     const nextIndex = questionIndex + 1;
@@ -478,34 +438,56 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
   }
 
   function generateFallbackInterviewQuestion(index: number) {
+    const roleTitle = job.title || "this position";
+
     if (globalTimeLeft < 80) {
       return {
-        question: "Thank you! Our 5-minute time limit is nearly up, so we'll stop here. Finalizing the interview and submitting your responses...",
+        question: `Thank you! Our 15-minute time limit is nearly up, so we will conclude here. We will finalize your responses and submit them to the recruitment team for review.`,
         isComplete: true,
         recommendedSeconds: 30
       };
     }
 
-    const defaults: Record<number, string> = {
-      0: `Hi candidate, welcome to the screening interview. To start, could you introduce yourself and explain what interests you about this position?`,
-      1: `Can you tell me about a challenging technical problem you solved recently and what technologies you used to resolve it?`,
-      2: `How do you approach collaborating with team members and stakeholders when requirements are ambiguous?`,
-      3: `In terms of your development process, what steps do you take to ensure code quality, testing, and reliability?`,
-      4: `Finally, what is a new technology or methodology you've been learning recently, and how do you plan to apply it?`
+    const defaults: Record<number, { text: string; seconds: number }> = {
+      0: {
+        text: `Welcome to your interview for the ${roleTitle} role. To begin, could you briefly introduce yourself and share what interests you about this position?`,
+        seconds: 50,
+      },
+      1: {
+        text: `In your view, what are the most critical responsibilities and skills needed to excel as a ${roleTitle}, and how does your background align with them?`,
+        seconds: 70,
+      },
+      2: {
+        text: `Can you describe a specific time when you tackled a complex challenge or resolved an issue in your past work or projects? What action did you take, and what was the outcome?`,
+        seconds: 90,
+      },
+      3: {
+        text: `How do you typically manage conflicting priorities, tight deadlines, or collaboration with colleagues when working on key responsibilities?`,
+        seconds: 75,
+      },
+      4: {
+        text: `Imagine you are working in this ${roleTitle} role and a key task is delayed due to unexpected circumstances shortly before a deadline. Walk me through the steps you would take to handle this.`,
+        seconds: 90,
+      },
+      5: {
+        text: `Is there anything else regarding your experience or readiness for the ${roleTitle} position that you would like to share before we conclude?`,
+        seconds: 60,
+      },
     };
 
-    const q = defaults[index];
-    if (!q) {
+    const item = defaults[index];
+    if (!item) {
       return {
-        question: "Thank you! I have gathered all the necessary details. Submitting your interview responses now...",
+        question: `Thank you so much! All key competencies for the ${roleTitle} position have been gathered. Submitting your interview responses now...`,
         isComplete: true,
         recommendedSeconds: 30
       };
     }
+
     return {
-      question: q,
+      question: item.text,
       isComplete: false,
-      recommendedSeconds: 60
+      recommendedSeconds: item.seconds,
     };
   }
 
@@ -644,7 +626,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
               Interview Completed!
             </h1>
             <p className="text-sm text-[var(--color-muted-foreground)] max-w-sm mx-auto">
-              Your voice responses have been transcribed and submitted successfully. Recruiter evaluation scoring has run.
+              Your voice responses have been transcribed and submitted successfully. Your interview will be reviewed by the recruitment team as part of the evaluation process.
             </p>
           </div>
 
@@ -805,7 +787,7 @@ export function InterviewChat({ applicationId, job, candidateId }: InterviewChat
             {/* Submit Button */}
             <Button
               type="submit"
-              disabled={isAiTyping || !currentInput.trim()}
+              disabled={isAiTyping || isTranscribing || (!isListening && !currentInput.trim())}
               className="px-4 h-12 shadow-sm shrink-0"
             >
               <Send size={16} />

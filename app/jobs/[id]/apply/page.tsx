@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, UploadCloud, Loader2, CheckCircle2, LogIn, FileText, X } from "lucide-react";
+import { isPlanB } from "@/lib/config";
 
 export default function ApplyPage({
   params,
@@ -27,6 +28,7 @@ export default function ApplyPage({
   const [isCandidate, setIsCandidate] = useState<boolean | null>(null); // null = loading
   const [appStatus, setAppStatus] = useState<string>("screening");
   const [fitScore, setFitScore] = useState<number | null>(null);
+  const [submittedAppId, setSubmittedAppId] = useState<string | null>(null);
 
   const [profileResumeName, setProfileResumeName] = useState<string | null>(null);
   const [profileResumeUrl, setProfileResumeUrl] = useState<string | null>(null);
@@ -95,7 +97,15 @@ export default function ApplyPage({
 
         if (!res.ok) {
           setSubmittingStep("idle");
-          setError(json.error || `Submission failed (${res.status})`);
+          const rawErr = (json.error || `Submission failed (${res.status})`).toString();
+          if (rawErr.includes("503") || rawErr.includes("demand") || rawErr.includes("SERVICE_BUSY")) {
+            setError("The application screening service is temporarily busy (Code: AI_503_SERVICE_BUSY). Please retry in a few moments.");
+          } else if (rawErr.includes("429") || rawErr.includes("RATE_LIMITED")) {
+            setError("Rate limit reached. Please wait a moment and try again (Code: AI_429_RATE_LIMITED).");
+          } else {
+            const sanitized = rawErr.replace(/https?:\/\/[^\s]+/g, "").replace(/\[GoogleGenerativeAI Error\]:?/gi, "").trim();
+            setError(sanitized.length > 150 ? `Submission failed (Code: APP_ERR_${res.status})` : sanitized);
+          }
           return;
         }
 
@@ -109,13 +119,14 @@ export default function ApplyPage({
 
         if (json.status) setAppStatus(json.status);
         if (json.fitScore) setFitScore(json.fitScore);
+        if (json.application?.id) setSubmittedAppId(json.application.id);
         setSuccess(true);
         setSubmittingStep("idle");
       } catch (err: any) {
         clearTimeout(stepTimer1);
         clearTimeout(stepTimer2);
         setSubmittingStep("idle");
-        setError(err.message || "Failed to submit application");
+        setError("Network connection issue during submission. Please try again (Code: APP_NET_ERR).");
       }
     });
   }
@@ -204,14 +215,18 @@ export default function ApplyPage({
             )}
             <p className="text-[var(--color-muted-foreground)] text-sm pt-2">
               {appStatus === "interview" 
-                ? "Excellent! Your resume matches our requirements. You have been pre-selected for the screening interview! You can start it right away."
+                ? (isPlanB()
+                    ? "Excellent! Your resume has been successfully processed. Please proceed to complete your position-tailored online recruitment assessment."
+                    : "Excellent! Your resume matches our requirements. You have been pre-selected for the screening interview! You can start it right away.")
                 : "Thank you for applying. We have received your application. You will be gotten back to after proper review from the admin via email to proceed for an interview."}
             </p>
           </div>
           <div className="space-y-2.5 pt-2">
             {appStatus === "interview" && (
               <Button asChild className="w-full">
-                <Link href="/candidate/interviews">Start AI Interview Now</Link>
+                <Link href={submittedAppId ? (isPlanB() ? `/candidate/assessment/${submittedAppId}` : `/candidate/interview/${submittedAppId}`) : (isPlanB() ? "/candidate/assessments" : "/candidate/interviews")}>
+                  {isPlanB() ? "Start Online Assessment Now" : "Start AI Interview Now"}
+                </Link>
               </Button>
             )}
             <Button asChild variant={appStatus === "interview" ? "outline" : "default"} className="w-full">

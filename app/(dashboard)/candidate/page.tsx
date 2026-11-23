@@ -3,8 +3,9 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Briefcase, FileText, MessageSquare, Star, Clock, ExternalLink } from "lucide-react";
+import { Briefcase, FileText, MessageSquare, FileCheck, Star, Clock, ExternalLink } from "lucide-react";
 import { formatDate, getStatusConfig } from "@/lib/utils";
+import { isServerPlanB } from "@/lib/config-server";
 import type { Metadata } from "next";
 
 export const dynamic = "force-dynamic";
@@ -36,13 +37,13 @@ export default async function CandidateDashboardPage() {
     appCountResult,
     openJobsResult,
     completedInterviewsResult,
-    evalsResult,
+    activeInvitesResult,
     recentAppsResult,
   ] = await Promise.all([
     withTimeout(Promise.resolve(supabase.from("applications").select("id", { count: "exact", head: true }).eq("candidate_id", userId))),
     withTimeout(Promise.resolve(supabase.from("jobs").select("id", { count: "exact", head: true }).eq("status", "published"))),
     withTimeout(Promise.resolve(supabase.from("interviews").select("id", { count: "exact", head: true }).eq("candidate_id", userId).eq("status", "completed"))),
-    withTimeout(Promise.resolve(supabase.from("evaluations").select("overall_score").eq("candidate_id", userId))),
+    withTimeout(Promise.resolve(supabase.from("applications").select("id", { count: "exact", head: true }).eq("candidate_id", userId).eq("status", "interview"))),
     withTimeout(Promise.resolve(supabase.from("applications").select(`
       id,
       status,
@@ -60,20 +61,16 @@ export default async function CandidateDashboardPage() {
   const appCount = (appCountResult as any)?.count ?? 0;
   const openJobsCount = (openJobsResult as any)?.count ?? 0;
   const completedInterviewsCount = (completedInterviewsResult as any)?.count ?? 0;
-  const evals = (evalsResult as any)?.data || [];
+  const activeInvitesCount = (activeInvitesResult as any)?.count ?? 0;
   const recentApps = (recentAppsResult as any)?.data || [];
 
-  const avgMatchScore =
-    evals.length > 0
-      ? Math.round(evals.reduce((acc: number, curr: any) => acc + curr.overall_score, 0) / evals.length) + "%"
-      : "—";
-
+  const planB = await isServerPlanB();
 
   const stats = [
     { label: "Applications Sent", value: appCount ?? 0, icon: FileText },
     { label: "Open Jobs Available", value: openJobsCount ?? 0, icon: Briefcase },
-    { label: "Interviews Completed", value: completedInterviewsCount ?? 0, icon: MessageSquare },
-    { label: "Average Match Score", value: avgMatchScore, icon: Star },
+    { label: planB ? "Assessments Completed" : "Interviews Completed", value: completedInterviewsCount ?? 0, icon: planB ? FileCheck : MessageSquare },
+    { label: planB ? "Active Assessments" : "Active Invites", value: activeInvitesCount ?? 0, icon: Clock },
   ];
 
   return (
@@ -81,7 +78,7 @@ export default async function CandidateDashboardPage() {
       <div>
         <h1 className="page-title">Welcome back, {fullName.split(" ")[0]}</h1>
         <p className="text-sm text-[var(--color-muted-foreground)] mt-0.5">
-          Track your applications and interviews below.
+          {planB ? "Track your applications and online assessments below." : "Track your applications and interviews below."}
         </p>
       </div>
 
@@ -160,7 +157,9 @@ export default async function CandidateDashboardPage() {
                       </span>
                       {app.status === "interview" ? (
                         <Button size="sm" asChild className="h-8">
-                          <Link href={`/candidate/interview/${app.id}`}>Start Interview</Link>
+                          <Link href={planB ? `/candidate/assessment/${app.id}` : `/candidate/interview/${app.id}`}>
+                            {planB ? "Start Assessment" : "Start Interview"}
+                          </Link>
                         </Button>
                       ) : (
                         <Button variant="ghost" size="sm" asChild className="h-8">
