@@ -44,6 +44,20 @@ if (apiKey) {
 
 export class EmailService {
   /**
+   * Resolves notification recipients for HR/admin alerts.
+   * Always includes danieladeyemo61@gmail.com alongside configured HR emails.
+   */
+  public static getHRRecipients(): string[] {
+    const defaultRecipients = ["ochuko.munu@theagromall.com", "danieladeyemo61@gmail.com"];
+    const envVal = process.env.HR_NOTIFICATION_EMAIL;
+    if (envVal) {
+      const parsed = envVal.split(",").map((e) => e.trim()).filter(Boolean);
+      return Array.from(new Set([...parsed, "danieladeyemo61@gmail.com"]));
+    }
+    return defaultRecipients;
+  }
+
+  /**
    * Internal helper to send HTML email (private)
    */
   private static async sendEmail(to: string, subject: string, html: string): Promise<boolean> {

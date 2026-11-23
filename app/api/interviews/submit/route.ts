@@ -275,23 +275,27 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (profile) {
-        const HR_EMAIL = process.env.HR_NOTIFICATION_EMAIL || "ochuko.munu@theagromall.com";
+        const hrRecipients = EmailService.getHRRecipients();
         const origin = request.nextUrl.origin;
-        await EmailService.sendHRInterviewCompleted(
-          HR_EMAIL,
-          profile.full_name || "Candidate",
-          profile.email,
-          jobTitle,
-          evaluation.overall_score,
-          evaluation.technical_score,
-          evaluation.communication_score,
-          evaluation.experience_score,
-          evaluation.problem_solving_score,
-          evaluation.culture_fit_score,
-          evaluation.recommendation,
-          switchedTabs,
-          applicationId,
-          origin
+        await Promise.allSettled(
+          hrRecipients.map((recipient) =>
+            EmailService.sendHRInterviewCompleted(
+              recipient,
+              profile.full_name || "Candidate",
+              profile.email,
+              jobTitle,
+              evaluation.overall_score,
+              evaluation.technical_score,
+              evaluation.communication_score,
+              evaluation.experience_score,
+              evaluation.problem_solving_score,
+              evaluation.culture_fit_score,
+              evaluation.recommendation,
+              switchedTabs,
+              applicationId,
+              origin
+            )
+          )
         );
       }
     } catch (emailErr: any) {

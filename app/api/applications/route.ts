@@ -365,19 +365,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ── 8.6. Notify HR of new application ───────────────────────
-    const HR_EMAIL = process.env.HR_NOTIFICATION_EMAIL || "ochuko.munu@theagromall.com";
+    // ── 8.6. Notify HR and Admin of new application ───────────────────
     try {
       const origin = request.nextUrl.origin;
-      await EmailService.sendHRNewApplication(
-        HR_EMAIL,
-        candidateName,
-        candidateEmail,
-        job.title,
-        aiAnalysis?.overall_score ?? 0,
-        applicationStatus,
-        application.id,
-        origin
+      const hrRecipients = EmailService.getHRRecipients();
+      await Promise.allSettled(
+        hrRecipients.map((recipient) =>
+          EmailService.sendHRNewApplication(
+            recipient,
+            candidateName,
+            candidateEmail,
+            job.title,
+            aiAnalysis?.overall_score ?? 0,
+            applicationStatus,
+            application.id,
+            origin
+          )
+        )
       );
     } catch (err: any) {
       // Non-blocking — never fail the application submission because of HR email

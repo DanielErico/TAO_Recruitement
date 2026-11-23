@@ -239,6 +239,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // 8.5. Notify HR and Admin of completed assessment (non-blocking)
+    try {
+      const hrRecipients = EmailService.getHRRecipients();
+      const origin = request.nextUrl.origin;
+      await Promise.allSettled(
+        hrRecipients.map((recipient) =>
+          EmailService.sendHRInterviewCompleted(
+            recipient,
+            candidateName,
+            candidateEmail || "",
+            job?.title || "Role",
+            evaluationResult.overall_score,
+            evaluationResult.technical_score,
+            evaluationResult.communication_score,
+            evaluationResult.experience_score,
+            evaluationResult.problem_solving_score,
+            evaluationResult.culture_fit_score,
+            evaluationResult.recommendation,
+            false,
+            applicationId,
+            origin
+          )
+        )
+      );
+    } catch (hrErr) {
+      console.warn("[Assessments:Submit] HR notification dispatch failed:", hrErr);
+    }
+
     return NextResponse.json({
       success: true,
       message: "Assessment submitted successfully. Your application is now under recruiter review.",
